@@ -86,7 +86,12 @@ def get_employees():
     for person in persons:
         online = latest_frames.get(person["id"]) is not None
         employees.append(
-            {"id": person["id"], "name": person.get("name"), "online": online}
+            {
+                "id": person["id"],
+                "name": person.get("name"),
+                "online": online,
+                "last_login_time": person.get("last_login_time"),
+            }
         )
     helper.close()
     return jsonify(employees)
@@ -105,6 +110,7 @@ def get_employee(person_id):
                 "name": person.get("name"),
                 "age": person.get("age"),
                 "avatar": person.get("avatar", "/logo.png"),
+                "last_login_time": person.get("last_login_time"),
             }
         )
     else:

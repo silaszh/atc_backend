@@ -1,5 +1,11 @@
 import threading
 import socketserver
+import sys
+import os
+
+# 添加路径以导入mongo_helper
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from mongo_helper import get_default_helper
 
 # 全局变量存储最新帧，按摄像头ID索引
 latest_frames = {}
@@ -7,11 +13,13 @@ latest_frames = {}
 # Socket服务器配置
 STREAM_PORT = 65432
 
+
 class FrameHandler(socketserver.BaseRequestHandler):
     def handle(self):
         global latest_frames
         print(f"新的摄像头连接: {self.client_address}")
         current_camera_id = None
+
         try:
             while True:
                 try:
@@ -26,7 +34,18 @@ class FrameHandler(socketserver.BaseRequestHandler):
                     if not id_data:
                         break
                     camera_id = id_data.decode("utf-8")
-                    current_camera_id = camera_id
+                    if current_camera_id is None:
+                        helper = get_default_helper()
+                        # 检查是否为有效的员工ID
+                        person = helper.get_person_by_id(camera_id)
+                        if not person:
+                            print(f"无效的员工ID: {camera_id}，断开连接")
+
+                        # 更新员工的上次登录时间
+                        helper.update_person_last_login(camera_id)
+                        print(f"员工 {camera_id} 登录时间已更新")
+                        helper.close()
+                        current_camera_id = camera_id
 
                     # 接收帧长度(4字节)
                     frame_length_data = self.request.recv(4)
@@ -56,6 +75,7 @@ class FrameHandler(socketserver.BaseRequestHandler):
                 print(f"删除断开摄像头 {current_camera_id} 的记录")
             print(f"摄像头连接断开: {self.client_address}")
 
+
 def start_stream_server():
     try:
         server = socketserver.ThreadingTCPServer(("0.0.0.0", STREAM_PORT), FrameHandler)
@@ -64,10 +84,12 @@ def start_stream_server():
     except Exception as e:
         print(f"启动流服务器失败: {e}")
 
+
 def init_socket_server():
     global stream_thread
     stream_thread = threading.Thread(target=start_stream_server, daemon=True)
     stream_thread.start()
+
 
 if __name__ == "__main__":
     # 作为独立进程运行

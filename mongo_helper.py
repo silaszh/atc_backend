@@ -50,12 +50,11 @@ class MongoHelper:
     def get_person_by_id(self, person_id: str) -> Optional[Dict[str, Any]]:
         return self.persons_coll.find_one({"id": person_id})
 
-    def update_person(
-        self, person_id: str, updates: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    def update_person_last_login(self, person_id: str) -> Optional[Dict[str, Any]]:
+        """更新员工的上次登录时间"""
         return self.persons_coll.find_one_and_update(
             {"id": person_id},
-            {"$set": updates},
+            {"$set": {"last_login_time": datetime.utcnow()}},
             return_document=ReturnDocument.AFTER,
         )
 
