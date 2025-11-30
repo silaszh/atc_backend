@@ -11,7 +11,6 @@ from flask import Flask, request, jsonify, Response
 
 from llm.model import Model
 from llm import prompts
-from webrtc_handler import WebRTCHandler
 from socket_server import latest_frames, init_socket_server
 from mongo_helper import get_default_helper
 
@@ -22,26 +21,9 @@ model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 
 # 摄像头相关请求
 
-webrtc_handler = WebRTCHandler()
 
-
-@app.route("/api/offer", methods=["POST"])
-def offer():
-    if not webrtc_handler.working:
-        webrtc_handler.start()
-    # 接收浏览器的 SDP offer，通过WebRTC处理器处理，返回 answer
-    if not request.is_json:
-        return jsonify({"error": "expected json"}), 400
-    offer_data = request.get_json()
-    result = webrtc_handler.handle_offer(offer_data)
-    if "error" in result:
-        return jsonify(result), 500
-    return jsonify(result)
-
-
-@app.route("/api/stream")
-def stream():
-    camera_id = request.args.get("id")
+@app.route("/api/streams/<camera_id>")
+def get_stream(camera_id):
     if not camera_id:
         return Response("", mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -64,26 +46,25 @@ def stream():
 # 大模型相关请求
 
 
-@app.route("/api/chat", methods=["POST"])
-def chat_post():
+@app.route("/api/chats", methods=["POST"])
+def create_chat():
+    chat_id = model.newContext(prompts.chat_prompt)
+    return jsonify({"chat_id": chat_id})
+
+
+@app.route("/api/chats/<chat_id>/messages", methods=["POST"])
+def send_message(chat_id):
     if request.is_json:
         data = request.get_json()
         print(data)
-        chat_id = data["chat_id"]
         msg = model.chat(chat_id, data["message"])
         return jsonify({"message": msg})
     else:
         return jsonify({"error": "Invalid input"}), 400
 
 
-@app.route("/api/newChat", methods=["POST"])
-def newChat_post():
-    chat_id = model.newContext(prompts.chat_prompt)
-    return jsonify({"chat_id": chat_id})
-
-
-@app.route("/api/infer", methods=["POST"])
-def infer():
+@app.route("/api/inferences", methods=["POST"])
+def create_inference():
     if request.is_json:
         data = request.get_json()
         chat_id = model.newContext(prompts.infer_prompt)
@@ -97,15 +78,24 @@ def infer():
 # 数据库相关请求
 
 
-@app.route("/api/getInfo", methods=["GET"])
-def get_info():
-    # 从查询参数获取 id
-    id_param = request.args.get("id")
-    if not id_param:
-        return jsonify({"error": "Missing id parameter"}), 400
-
+@app.route("/api/employees", methods=["GET"])
+def get_employees():
     helper = get_default_helper()
-    person = helper.get_person_by_id(id_param)
+    persons = helper.get_all_persons()
+    employees = []
+    for person in persons:
+        online = latest_frames.get(person["id"]) is not None
+        employees.append(
+            {"id": person["id"], "name": person.get("name"), "online": online}
+        )
+    helper.close()
+    return jsonify(employees)
+
+
+@app.route("/api/employees/<person_id>", methods=["GET"])
+def get_employee(person_id):
+    helper = get_default_helper()
+    person = helper.get_person_by_id(person_id)
     helper.close()
 
     if person:
@@ -121,22 +111,8 @@ def get_info():
         return jsonify({"error": "Person not found"}), 404
 
 
-@app.route("/api/getEmployees", methods=["GET"])
-def get_employees():
-    helper = get_default_helper()
-    persons = helper.get_all_persons()
-    employees = []
-    for person in persons:
-        online = latest_frames.get(person["id"]) is not None
-        employees.append(
-            {"id": person["id"], "name": person.get("name"), "online": online}
-        )
-    helper.close()
-    return jsonify(employees)
-
-
-@app.route("/api/record", methods=["POST"])
-def record():
+@app.route("/api/states", methods=["POST"])
+def create_state():
     if request.is_json:
         data = request.get_json()
         if "id" not in data:
