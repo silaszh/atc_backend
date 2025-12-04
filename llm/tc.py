@@ -1,124 +1,136 @@
 import json
+import sys
+import os
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
 
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_status",
-            "description": "根据员工名获取近五次参考效价唤醒模型的情绪数据，其中包括具体的arousal值，区间(0, 1)；valence值，区间(-1, 1)和系统推断的主要情绪。当员工不存在时，success字段为false",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "employee_name": {"type": "string", "description": "员工姓名"}
-                },
-                "required": ["employee_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_all_status",
-            "description": "获取所有员工的情绪状态",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-]
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from mongo_helper import get_default_helper
+
+tools = []
+toolsMap = {}
 
 
 def handle_tool_calls(tc: ChatCompletionMessageFunctionToolCall):
-    if tc.function.name == "get_status":
-        print(tc.function.arguments)
-        try:
-            args = json.loads(tc.function.arguments)
-        except Exception:
-            args = eval(tc.function.arguments)
-        employee_name = args["employee_name"]
-        result = {
-            "success": True,
-            "data": {
-                "name": employee_name,
-                "id": "23370000",
-                "status": [
-                    {
-                        "valence": -0.0569193272846249,
-                        "arousal": 0.0426297431765363,
-                        "dominant_emotion": "sleepy",
-                        "probabilities": {
-                            "angry": 0.7424741052091122,
-                            "disgust": 1.4385372537617513e-05,
-                            "fear": 3.133590519428253,
-                            "happy": 0.272903754375875,
-                            "sad": 6.222175061702728,
-                            "surprise": 0.014641349844168872,
-                            "neutral": 89.61420059204102,
-                        },
-                    },
-                    {
-                        "valence": -0.6284678809794514,
-                        "arousal": 0.6511502143768666,
-                        "dominant_emotion": "nervous",
-                        "probabilities": {
-                            "angry": 6.514935195446014,
-                            "disgust": 0.0012231746040924918,
-                            "fear": 76.23038291931152,
-                            "happy": 0.03507450164761394,
-                            "sad": 15.921491384506226,
-                            "surprise": 0.19239415414631367,
-                            "neutral": 1.1044963262975216,
-                        },
-                    },
-                ],
+    print(tc.function.name, tc.function.arguments)
+    result = toolsMap[tc.function.name](**json.loads(tc.function.arguments))
+    import pprint
+
+    pprint.pprint(result)
+    return json.dumps(result, ensure_ascii=False)
+
+
+class Tool:
+    def __init__(self, desc, *params):
+        self.desc = desc
+        self.parameters = []
+        for p in params:
+            self.param(*p)
+
+    def param(self, name: str, description: str, type="string", required=True):
+        self.parameters.append(
+            {
+                "name": name,
+                "type": type,
+                "description": description,
+                "required": required,
+            }
+        )
+        return self
+
+    def __call__(self, tool_func):
+        params = {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+        for p in self.parameters:
+            params["properties"][p.get("name")] = {
+                "type": p.get("type"),
+                "description": p.get("description"),
+            }
+            if p.get("required"):
+                params["required"].append(p.get("name"))
+        tool_config = {
+            "type": "function",
+            "function": {
+                "name": tool_func.__name__,
+                "description": self.desc,
+                "parameters": params,
             },
         }
-        return json.dumps(result, ensure_ascii=False)
-    elif tc.function.name == "get_all_status":
-        return json.dumps(
-            {
-                "success": True,
-                "data": [
-                    {
-                        "name": "小明",
-                        "id": "23370000",
-                        "status": [
-                            {
-                                "valence": -0.0569193272846249,
-                                "arousal": 0.0426297431765363,
-                                "dominant_emotion": "sleepy",
-                                "probabilities": {
-                                    "angry": 0.7424741052091122,
-                                    "disgust": 1.4385372537617513e-05,
-                                    "fear": 3.133590519428253,
-                                    "happy": 0.272903754375875,
-                                    "sad": 6.222175061702728,
-                                    "surprise": 0.014641349844168872,
-                                    "neutral": 89.61420059204102,
-                                },
-                            }
-                        ],
-                    },
-                    {
-                        "name": "小帅",
-                        "id": "23370001",
-                        "status": [
-                            {
-                                "valence": -0.2519051893370252,
-                                "arousal": 0.17188670209759896,
-                                "dominant_emotion": "bored",
-                                "probabilities": {
-                                    "angry": 3.04515975982903,
-                                    "disgust": 5.6837300212363796e-05,
-                                    "fear": 12.135964610336101,
-                                    "happy": 0.47922095346277677,
-                                    "sad": 28.512720973057807,
-                                    "surprise": 0.024968474496139557,
-                                    "neutral": 55.801907527560445,
-                                },
-                            }
-                        ],
-                    },
-                ],
+        tools.append(tool_config)
+        toolsMap[tool_func.__name__] = tool_func
+        return tool_func
+
+
+@Tool(
+    "根据员工名获取近五次参考效价唤醒模型的情绪数据，其中包括具体的arousal值，区间(0, 1)；valence值，区间(-1, 1)和系统推断的主要情绪。当员工不存在时，success字段为false",
+    ("employee_name", "员工姓名"),
+)
+def get_state(employee_name):
+    helper = get_default_helper()
+    person = helper.get_person_by_name(employee_name)
+    if person:
+        log = helper.get_latest_state_log(person["id"])
+        helper.close()
+        return {
+            "success": True,
+            "data": {
+                "id": person["id"],
+                "name": person.get("name"),
+                "age": person.get("age"),
+                "ear": log.get("ear", 0),
+                "mar": log.get("mar", 0),
+                "emoRet": log.get("emoRet", []),
             },
-            ensure_ascii=False,
-        )
+        }
+    else:
+        return {"success": False}
+
+
+def extract_emo(emoRet):
+    """从状态日志中提取 dominant_emotion 列表"""
+    return [ret.get("domEmo", "") for ret in emoRet]
+
+
+@Tool("获取所有员工的情绪状态")
+def get_all_states():
+    helper = get_default_helper()
+    persons = helper.get_all_persons()
+    data = []
+    for person in persons:
+        person_id = person["id"]
+        log = helper.get_latest_state_log(person_id)
+        if not log:
+            data.append({"name": person.get("name"), "ear": 0, "mar": 0, "emo": []})
+            continue
+        ear = log.get("ear", 0)
+        mar = log.get("mar", 0)
+        emo = extract_emo(log.get("emoRet", []))
+        data.append({"name": person.get("name"), "ear": ear, "mar": mar, "emo": emo})
+    helper.close()
+    return {"success": True, "data": data}
+
+
+@Tool(
+    "获取最近10条特定员工的情绪日志",
+    ("employ_name", "员工姓名"),
+)
+def get_state_trend(employ_name):
+    helper = get_default_helper()
+    person = helper.get_person_by_name(employ_name)
+    if not person:
+        helper.close()
+        return {"success": False}
+    
+    logs = helper.get_state_logs_by_person_id(person["id"], limit=10)
+    helper.close()
+    
+    data = []
+    for log in logs:
+        ear = log.get("ear", 0)
+        mar = log.get("mar", 0)
+        emo = extract_emo(log.get("emoRet", []))
+        data.append({"ear": ear, "mar": mar, "emo": emo})
+    
+    return {"success": True, "data": data}

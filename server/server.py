@@ -57,7 +57,7 @@ def send_message(chat_id):
     if request.is_json:
         data = request.get_json()
         print(data)
-        msg = model.chat(chat_id, data["message"])
+        msg = model.chat(int(chat_id), data["message"])
         return jsonify({"message": msg})
     else:
         return jsonify({"error": "Invalid input"}), 400
@@ -70,7 +70,7 @@ def create_inference():
         chat_id = model.newContext(prompts.infer_prompt)
         msg = model.chat(chat_id, json.dumps(data))
         model.deleteContext(chat_id)
-        return jsonify({"status": msg})
+        return jsonify({"state": msg})
     else:
         return jsonify({"error": "Invalid input"}), 400
 

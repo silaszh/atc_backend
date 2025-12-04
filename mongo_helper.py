@@ -50,6 +50,9 @@ class MongoHelper:
     def get_person_by_id(self, person_id: str) -> Optional[Dict[str, Any]]:
         return self.persons_coll.find_one({"id": person_id})
 
+    def get_person_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        return self.persons_coll.find_one({"name": name})
+
     def update_person_last_login(self, person_id: str) -> Optional[Dict[str, Any]]:
         """更新员工的上次登录时间"""
         return self.persons_coll.find_one_and_update(
@@ -66,9 +69,16 @@ class MongoHelper:
         if "timestamp" in log:
             if isinstance(log["timestamp"], str):
                 # 解析 "2025-11-14-17-06-08" 格式为 datetime
-                parts = log["timestamp"].split('-')
+                parts = log["timestamp"].split("-")
                 if len(parts) == 6:
-                    log["timestamp"] = datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+                    log["timestamp"] = datetime(
+                        int(parts[0]),
+                        int(parts[1]),
+                        int(parts[2]),
+                        int(parts[3]),
+                        int(parts[4]),
+                        int(parts[5]),
+                    )
         else:
             log["timestamp"] = datetime.utcnow()
         person_id = log["person_id"]
@@ -107,40 +117,3 @@ class MongoHelper:
 def get_default_helper() -> MongoHelper:
     """返回使用默认配置的 MongoHelper 实例。"""
     return MongoHelper()
-
-
-if __name__ == "__main__":
-    # 冒烟测试
-    import pprint
-
-    helper = MongoHelper()
-    try:
-        # 测试人员创建
-        person = {
-            "id": "23373333",
-            "name": "张三",
-        }
-
-        try:
-            inserted = helper.create_person(person)
-            print("Inserted person:")
-            pprint.pprint(inserted)
-        except ValueError as e:
-            print(e)
-            inserted = helper.get_person_by_id("23373333")
-            print("Existing person:")
-            pprint.pprint(inserted)
-
-        print("Inserted state log")
-
-        # 测试检索日志
-        logs = helper.get_state_logs_by_person_id("23373333")
-        print("State logs:")
-        pprint.pprint(logs)
-
-        latest = helper.get_latest_state_log("23373333")
-        print("Latest log:")
-        pprint.pprint(latest)
-
-    finally:
-        helper.close()
