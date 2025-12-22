@@ -16,8 +16,10 @@ class Model:
             "qwq": "QwQ-32B",
             "qw3": "qwen3",
             "qw3:8b": "Qwen3-8B",
+            "mimo": "mimo-v2-flash",
+            "GLM": "GLM-4.1V-Thinking-Flash",
         }
-        self.using_model = self.models["qw3:8b"]
+        self.using_model = self.models["mimo"]
         self.base_url = base_url
         self.api_key = api_key
         self.contexts: list[Context] = []
@@ -41,6 +43,41 @@ class Model:
         )
         while res.choices[0].message.tool_calls:
             ctx.addMessage(res.choices[0].message)
+            print("工具调用：" + ",".join(res.choices[0].message.tool_calls))
+            tool_call = res.choices[0].message.tool_calls[0]
+            result = tc.handle_tool_calls(tool_call)
+            ctx.addMessage(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+            )
+            res = ctx.client.chat.completions.create(
+                model=self.using_model, messages=ctx.messages
+            )
+        ctx.addMessage(res.choices[0].message)
+        return res.choices[0].message.content
+
+    def chatWithImg(self, chat_id: str, msg: str, img: str):
+        ctx = self.contexts[chat_id]
+        ctx.addMessage(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": msg},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img}"},
+                    },
+                ],
+            }
+        )
+        res = ctx.client.chat.completions.create(
+            model=self.using_model,
+            messages=ctx.messages,
+            tools=tc.tools,
+            tool_choice="auto",
+        )
+        while res.choices[0].message.tool_calls:
+            ctx.addMessage(res.choices[0].message)
+            print("工具调用：" + ",".join(res.choices[0].message.tool_calls))
             tool_call = res.choices[0].message.tool_calls[0]
             result = tc.handle_tool_calls(tool_call)
             ctx.addMessage(

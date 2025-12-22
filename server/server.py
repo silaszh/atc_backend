@@ -1,3 +1,4 @@
+import base64
 import json
 import sys
 import os
@@ -20,6 +21,9 @@ app = Flask(__name__, static_folder="../static", static_url_path="/")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+
+v_model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+v_model.using_model = v_model.models["GLM"]
 
 # 摄像头相关请求
 
@@ -63,6 +67,35 @@ def send_message(chat_id):
         return jsonify({"message": msg})
     else:
         return jsonify({"error": "Invalid input"}), 400
+
+
+@app.route("/api/analysis/<person_id>", methods=["POST"])
+def create_analysis(person_id):
+    if person_id not in latest_frames:
+        return jsonify({"online": False})
+
+    helper = get_default_helper()
+    recent_logs = helper.get_state_logs_by_person_id(person_id, limit=10)
+    helper.close()
+
+    log_data_list = []
+    for log in recent_logs:
+        if "_id" in log:
+            del log["_id"]
+        if "timestamp" in log:
+            log["timestamp"] = str(log["timestamp"])
+        log_data_list.append(log)
+
+    frame_data = latest_frames[person_id]
+    img = base64.b64encode(frame_data).decode("utf-8")
+    data = json.dumps(log_data_list)
+
+    chat_id = v_model.newContext(prompts.analyse_prompt)
+    print(data)
+    msg = v_model.chatWithImg(chat_id, data, img)
+    v_model.deleteContext(chat_id)
+
+    return jsonify({"online": True, "analysis": msg})
 
 
 @app.route("/api/inferences", methods=["POST"])
