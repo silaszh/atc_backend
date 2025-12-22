@@ -15,11 +15,12 @@ class Model:
             "qw2.5": "qwen2.5-instruct",
             "qwq": "QwQ-32B",
             "qw3": "qwen3",
+            "qw3:8b": "Qwen3-8B",
         }
-        self.using_model = self.models["qw3"]
+        self.using_model = self.models["qw3:8b"]
         self.base_url = base_url
         self.api_key = api_key
-        self.contexts = []
+        self.contexts: list[Context] = []
 
     def newContext(self, sys_prompt: str = None):
         chat_id = len(self.contexts)

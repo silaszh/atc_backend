@@ -7,15 +7,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.insert(0, os.path.dirname(__file__))
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect
+from flask_socketio import SocketIO
 
 from llm.model import Model
 from llm import prompts
 from socket_server import latest_frames, init_socket_server
 from mongo_helper import get_default_helper
 
-# 将静态文件目录保持为原设置（views 路由已可配置）；不影响 /webrtc 页面
+# 设置静态文件目录
 app = Flask(__name__, static_folder="../static", static_url_path="/")
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 
@@ -155,5 +157,49 @@ def index():
     return app.send_static_file("index.html")
 
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return app.send_static_file("index.html")
+
+
+def emotion_update_task():
+    """Background task to push emotion updates to frontend."""
+    while True:
+        online_ids = list(latest_frames.keys())
+        if online_ids:
+            try:
+                helper = get_default_helper()
+                employees_data = helper.get_recent_logs_for_employees(online_ids)
+                helper.close()
+
+                warnings = []
+                for emp in employees_data:
+                    logs = emp.get("logs", [])
+
+                    # 统计 sleepy 的数量
+                    sleepy_count = sum(
+                        1 for log in logs if log.get("emo_label") == "sleepy"
+                    )
+
+                    # 统计 ear < 0.15 的数量
+                    low_ear_count = sum(
+                        1
+                        for log in logs
+                        if isinstance(log.get("ear"), (int, float))
+                        and log.get("ear") < 0.15
+                    )
+
+                    if sleepy_count > 3 or low_ear_count > 3:
+                        warnings.append(emp["id"])
+
+                socketio.emit("warning_update", warnings)
+            except Exception as e:
+                print(f"Error in emotion update task: {e}")
+            socketio.sleep(15)
+        else:
+            socketio.sleep(1)
+
+
 if os.environ.get("WERKZEUG_RUN_MAIN"):
     init_socket_server()
+    socketio.start_background_task(emotion_update_task)

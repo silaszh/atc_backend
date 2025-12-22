@@ -1,6 +1,7 @@
 import json
 import sys
 import os
+from datetime import datetime
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -64,36 +65,58 @@ class Tool:
 
 
 @Tool(
-    "根据员工名获取近五次参考效价唤醒模型的情绪数据，其中包括具体的arousal值，区间(0, 1)；valence值，区间(-1, 1)和系统推断的主要情绪。当员工不存在时，success字段为false",
+    """
+    根据员工名获取最近一次记录的连续五次参考效价唤醒模型的情绪数据，其中：
+    - emo_va包括valence值，区间(-1, 1)和arousal值，区间(-1, 1)的平均值
+    - emo_label为系统推断的主要情绪，非常具有参考价值但并非总是正确
+    - pose为画面中员工所在的位置信息
+    - ear和mar为面部表情相关的指标，连续五次分析中眼睛和嘴巴开合度的平均值。你可以通过开合度预测是否处于临近睡眠状态（眯眼、打哈欠等行为）
+    - time为此次记录的系统时间，你可以与当前时间进行比较，如果时间差异大则说明员工暂未上线，数据参考价值有限
+    当员工不存在时，success字段为false，
+    若员工存在但所有数据为空，则说明最近一次记录时员工离岗
+""",
     ("employee_name", "员工姓名"),
 )
 def get_state(employee_name):
     helper = get_default_helper()
     person = helper.get_person_by_name(employee_name)
     if person:
-        log = helper.get_latest_state_log(person["id"])
+        # log = helper.get_latest_state_log(person["id"])
+        logs = helper.get_state_logs_by_person_id(person["id"], limit=5)
         helper.close()
+
+        data = []
+        for log in logs:
+            data.append(
+                {
+                    "id": person["id"],
+                    "name": person.get("name"),
+                    "age": person.get("age"),
+                    "ear": log.get("ear", 0),
+                    "mar": log.get("mar", 0),
+                    "emo_label": log.get("emo_label", ""),
+                    "emo_va": log.get("emo_va", []),
+                    "pose": log.get("pose", []),
+                    "time": log.get("timestamp", ""),
+                }
+            )
         return {
             "success": True,
-            "data": {
-                "id": person["id"],
-                "name": person.get("name"),
-                "age": person.get("age"),
-                "ear": log.get("ear", 0),
-                "mar": log.get("mar", 0),
-                "emoRet": log.get("emoRet", []),
-            },
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": data,
         }
     else:
         return {"success": False}
 
 
-def extract_emo(emoRet):
-    """从状态日志中提取 dominant_emotion 列表"""
-    return [ret.get("domEmo", "") for ret in emoRet]
-
-
-@Tool("获取所有员工的情绪状态")
+@Tool(
+    """
+获取所有员工最近一次的情绪状态数据，包括ear、mar、emo，
+ear和mar为面部表情相关的指标，连续五次分析中眼睛和嘴巴开合度的平均值，
+emo_label为系统初步推断的主要情绪。
+如果一位员工数据异常，均为空。
+"""
+)
 def get_all_states():
     helper = get_default_helper()
     persons = helper.get_all_persons()
@@ -102,35 +125,59 @@ def get_all_states():
         person_id = person["id"]
         log = helper.get_latest_state_log(person_id)
         if not log:
-            data.append({"name": person.get("name"), "ear": 0, "mar": 0, "emo": []})
+            data.append(
+                {"name": person.get("name"), "ear": 0, "mar": 0, "emo_label": ""}
+            )
             continue
         ear = log.get("ear", 0)
         mar = log.get("mar", 0)
-        emo = extract_emo(log.get("emoRet", []))
-        data.append({"name": person.get("name"), "ear": ear, "mar": mar, "emo": emo})
+        emo_label = log.get("emo_label", "")
+        data.append(
+            {"name": person.get("name"), "ear": ear, "mar": mar, "emo_label": emo_label}
+        )
     helper.close()
     return {"success": True, "data": data}
 
 
 @Tool(
-    "获取最近10条特定员工的情绪日志",
-    ("employ_name", "员工姓名"),
+    """
+获取特定员工最近10次记录的情绪数据，其中：
+- emo_va包括valence值，区间(-1, 1)和arousal值，区间(-1, 1)的平均值
+- emo_label为系统推断的主要情绪，非常具有参考价值但并非总是正确
+- pose为画面中员工所在的位置信息
+- ear和mar为面部表情相关的指标，连续五次分析中眼睛和嘴巴开合度的平均值。你可以通过开合度预测是否处于临近睡眠状态（眯眼、打哈欠等行为）
+当员工不存在时，success字段为false，
+若员工存在但所有数据为空，则说明最近一次记录时员工离岗
+""",
+    ("employee_name", "员工姓名"),
 )
-def get_state_trend(employ_name):
+def get_state_trend(employee_name):
     helper = get_default_helper()
-    person = helper.get_person_by_name(employ_name)
-    if not person:
+    person = helper.get_person_by_name(employee_name)
+    if person:
+        # log = helper.get_latest_state_log(person["id"])
+        logs = helper.get_state_logs_by_person_id(person["id"], limit=50)
         helper.close()
+
+        data = []
+        for log in logs:
+            data.append(
+                {
+                    "id": person["id"],
+                    "name": person.get("name"),
+                    "age": person.get("age"),
+                    "ear": log.get("ear", 0),
+                    "mar": log.get("mar", 0),
+                    "emo_label": log.get("emo_label", ""),
+                    "emo_va": log.get("emo_va", []),
+                    "pose": log.get("pose", []),
+                    "time": log.get("timestamp", ""),
+                }
+            )
+        return {
+            "success": True,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": data,
+        }
+    else:
         return {"success": False}
-    
-    logs = helper.get_state_logs_by_person_id(person["id"], limit=10)
-    helper.close()
-    
-    data = []
-    for log in logs:
-        ear = log.get("ear", 0)
-        mar = log.get("mar", 0)
-        emo = extract_emo(log.get("emoRet", []))
-        data.append({"ear": ear, "mar": mar, "emo": emo})
-    
-    return {"success": True, "data": data}

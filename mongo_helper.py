@@ -113,6 +113,18 @@ class MongoHelper:
             {"person_id": person_id}, sort=[("timestamp", DESCENDING)]
         )
 
+    def get_recent_logs_for_employees(self, person_ids: List[str]) -> List[Dict[str, Any]]:
+        results = []
+        for pid in person_ids:
+            # Get latest 5 logs (full document, excluding _id)
+            logs = list(self.state_logs_coll.find(
+                {"person_id": pid},
+                {"_id": 0}
+            ).sort("timestamp", DESCENDING).limit(5))
+            
+            results.append({"id": pid, "logs": logs})
+        return results
+
 
 def get_default_helper() -> MongoHelper:
     """返回使用默认配置的 MongoHelper 实例。"""
