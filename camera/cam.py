@@ -55,14 +55,15 @@ def main():
     # 声明Camera类的数组
     cameras = [
         VidCam("23373329", "E:/Desktop/vid/1.mp4"),
-        VidCam("23373330", "E:/Desktop/vid/2.mp4"),
-        VidCam("23373331", "E:/Desktop/vid/3.mp4"),
+        # VidCam("23373330", "E:/Desktop/vid/2.mp4"),
+        # VidCam("23373331", "E:/Desktop/vid/3.mp4"),
         PhyCam("23373332", device_id=0),
+        # VidCam("23373332", "E:/Desktop/vid/3.mp4"),
         # 可以添加更多：VidCam("vid_001", "path.mp4"), ImgCam("img_001", "path.jpg")
     ]
 
     # 使用多线程同时推流多个摄像头
-    fps = 10.0  # 10 FPS
+    fps = 100.0  # 10 FPS
     threads = []
 
     for camera in cameras:

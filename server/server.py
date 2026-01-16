@@ -2,6 +2,7 @@ import base64
 import json
 import sys
 import os
+import re
 from dotenv import load_dotenv
 
 # 加载.env文件
@@ -25,6 +26,19 @@ model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 v_model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 v_model.using_model = v_model.models["GLM"]
 
+# 全局状态存储
+current_warnings = set()
+current_dangers = set()
+
+
+@socketio.on("connect")
+def handle_connect():
+    if current_warnings:
+        socketio.emit("warning_update", list(current_warnings), to=request.sid)
+    if current_dangers:
+        socketio.emit("danger_update", list(current_dangers), to=request.sid)
+
+
 # 摄像头相关请求
 
 
@@ -44,7 +58,7 @@ def get_stream(camera_id):
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n"
                 )
-            time.sleep(0.1)  # 控制帧率
+            time.sleep(0.001)  # 控制帧率
 
     return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -67,6 +81,50 @@ def send_message(chat_id):
         return jsonify({"message": msg})
     else:
         return jsonify({"error": "Invalid input"}), 400
+
+
+def parse_analysis_result(msg):
+    # 清理可能的代码块标记
+    clean_msg = re.sub(r"^```\w*\s*|\s*```$", "", msg.strip(), flags=re.MULTILINE)
+
+    result = {
+        "level_code": 0,
+        "level_name": "未知",
+        "json_analysis": "",
+        "image_analysis": "",
+        "conclusion": "",
+        "raw_message": msg,
+    }
+
+    # 匹配至少3个连续的 - 或 _ 或 *，且前后可能有空白字符
+    parts = re.split(r"\s*(?:---|___|\*\*\*)\s*", clean_msg)
+
+    # 过滤空字符串
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if len(parts) >= 4:
+        # 解析第一部分：[等级序号]等级名称
+        header = parts[0]
+        # 尝试提取 [数字] 和 名称
+        match = re.match(r"\[(\d+)\]\s*(.*)", header)
+        if match:
+            result["level_code"] = int(match.group(1))
+            result["level_name"] = match.group(2)
+        else:
+            # 备用匹配：查找任何 [数字]
+            match = re.search(r"\[(\d+)\]", header)
+            if match:
+                result["level_code"] = int(match.group(1))
+                # 假设剩下的就是名称
+                result["level_name"] = header.replace(match.group(0), "").strip()
+            else:
+                result["level_name"] = header
+
+        result["json_analysis"] = parts[1]
+        result["image_analysis"] = parts[2]
+        result["conclusion"] = parts[3]
+
+    return result
 
 
 @app.route("/api/analysis/<person_id>", methods=["POST"])
@@ -95,7 +153,9 @@ def create_analysis(person_id):
     msg = v_model.chatWithImg(chat_id, data, img)
     v_model.deleteContext(chat_id)
 
-    return jsonify({"online": True, "analysis": msg})
+    analysis_result = parse_analysis_result(msg)
+    print(analysis_result)
+    return jsonify({"online": True, "analysis": analysis_result})
 
 
 @app.route("/api/inferences", methods=["POST"])
@@ -197,6 +257,7 @@ def page_not_found(e):
 
 def emotion_update_task():
     """Background task to push emotion updates to frontend."""
+    global current_warnings, current_dangers
     while True:
         online_ids = list(latest_frames.keys())
         if online_ids:
@@ -205,30 +266,89 @@ def emotion_update_task():
                 employees_data = helper.get_recent_logs_for_employees(online_ids)
                 helper.close()
 
-                warnings = []
+                new_warnings = []
+                new_dangers = []
                 for emp in employees_data:
                     logs = emp.get("logs", [])
 
-                    # 统计 sleepy 的数量
-                    sleepy_count = sum(
-                        1 for log in logs if log.get("emo_label") == "sleepy"
+                    # 统计空数据（离岗）的数量
+                    empty_count = sum(
+                        1
+                        for log in logs
+                        if not any(
+                            log.get(k) not in ["", None]
+                            for k in ["emo_label", "ear", "mar", "pose"]
+                        )
                     )
 
-                    # 统计 ear < 0.15 的数量
+                    if empty_count > 3:
+                        new_dangers.append(emp["id"])
+
+                    # 统计 sleepy 的数量
+                    negative_count = sum(
+                        1 for log in logs if log.get("emo_label") in ["sleepy", "bored"]
+                    )
+
+                    # 统计 ear < 0.2 的数量
                     low_ear_count = sum(
                         1
                         for log in logs
                         if isinstance(log.get("ear"), (int, float))
-                        and log.get("ear") < 0.15
+                        and log.get("ear") < 0.2
                     )
 
-                    if sleepy_count > 3 or low_ear_count > 3:
-                        warnings.append(emp["id"])
+                    # 统计 mar > 0.5 的数量
+                    high_mar_count = sum(
+                        1
+                        for log in logs
+                        if isinstance(log.get("mar"), (int, float))
+                        and log.get("mar") > 0.5
+                    )
 
-                socketio.emit("warning_update", warnings)
+                    # 统计 pose[0] abs > 30 的数量
+                    abnormal_pose_count = sum(
+                        1
+                        for log in logs
+                        if log.get("pose")
+                        and isinstance(log["pose"], list)
+                        and len(log["pose"]) > 0
+                        and abs(log["pose"][0]) > 30
+                    )
+
+                    if (
+                        negative_count > 3
+                        or low_ear_count > 3
+                        or high_mar_count > 3
+                        or abnormal_pose_count > 3
+                    ):
+                        new_warnings.append(emp["id"])
+
+                # 比较状态变化
+                new_warnings_set = set(new_warnings)
+                new_dangers_set = set(new_dangers)
+
+                added_warnings = list(new_warnings_set - current_warnings)
+                lifted_warnings = list(current_warnings - new_warnings_set)
+
+                added_dangers = list(new_dangers_set - current_dangers)
+                lifted_dangers = list(current_dangers - new_dangers_set)
+
+                current_warnings = new_warnings_set
+                current_dangers = new_dangers_set
+
+                if added_warnings:
+                    socketio.emit("warning_update", added_warnings)
+                if lifted_warnings:
+                    socketio.emit("warning_lift", lifted_warnings)
+
+                if added_dangers:
+                    socketio.emit("danger_update", added_dangers)
+                if lifted_dangers:
+                    socketio.emit("danger_lift", lifted_dangers)
+
             except Exception as e:
                 print(f"Error in emotion update task: {e}")
-            socketio.sleep(15)
+            socketio.sleep(5)
         else:
             socketio.sleep(1)
 

@@ -155,7 +155,6 @@ def get_state_trend(employee_name):
     helper = get_default_helper()
     person = helper.get_person_by_name(employee_name)
     if person:
-        # log = helper.get_latest_state_log(person["id"])
         logs = helper.get_state_logs_by_person_id(person["id"], limit=50)
         helper.close()
 

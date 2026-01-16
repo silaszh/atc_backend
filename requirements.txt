@@ -1,31 +1,6 @@
-# Project requirements for e:\Workspace\Python\atc
-# Install core dependencies with:
-#   pip install -r requirements.txt
-
-# Web / OpenAI
-flask>=2.0
-openai>=1.0
-
-# WebRTC / media
-aiortc>=1.5.0
-av>=10.0.0
-
-# Computer vision
+flask>=3.1
+flask-socketIO>=5.5
+pymongo==4.15.4
+openai>=2.6
 opencv-python>=4.5.5
 numpy>=1.24
-
-# (Optional) Deep learning / face/emotion model
-# NOTE: install torch following official instructions for your platform/CUDA
-# CPU-only example:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
-# OR see https://pytorch.org/get-started/locally/ for correct command
-torch>=2.0.0
-facenet-pytorch>=2.5.2
-
-# Notes:
-# - On Windows, installing `av` (PyAV) via pip can fail; prefer:
-#     conda install -c conda-forge av
-#   or download a prebuilt wheel for your Python version.
-# - `torch` is large and often platform-specific; prefer the official install command.
-# - `aiortc` pulls additional dependencies (aioice, cryptography, etc.) automatically.
-# - If you don't need ML features, you can omit torch and facenet-pytorch from this file.

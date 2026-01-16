@@ -19,7 +19,7 @@ class Model:
             "mimo": "mimo-v2-flash",
             "GLM": "GLM-4.1V-Thinking-Flash",
         }
-        self.using_model = self.models["mimo"]
+        self.using_model = self.models["qw3:8b"]
         self.base_url = base_url
         self.api_key = api_key
         self.contexts: list[Context] = []
@@ -43,7 +43,7 @@ class Model:
         )
         while res.choices[0].message.tool_calls:
             ctx.addMessage(res.choices[0].message)
-            print("工具调用：" + ",".join(res.choices[0].message.tool_calls))
+            print("工具调用：" + ",".join(tc.function.name for tc in res.choices[0].message.tool_calls))
             tool_call = res.choices[0].message.tool_calls[0]
             result = tc.handle_tool_calls(tool_call)
             ctx.addMessage(
@@ -77,7 +77,7 @@ class Model:
         )
         while res.choices[0].message.tool_calls:
             ctx.addMessage(res.choices[0].message)
-            print("工具调用：" + ",".join(res.choices[0].message.tool_calls))
+            print("工具调用：" + ",".join(tc.function.name for tc in res.choices[0].message.tool_calls))
             tool_call = res.choices[0].message.tool_calls[0]
             result = tc.handle_tool_calls(tool_call)
             ctx.addMessage(
