@@ -17,7 +17,7 @@ from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_TIME_BASE
 
 
 class WebRTCServer:
-    def __init__(self, fps):
+    def __init__(self, fps, seat, server="ws://localhost:5000"):
         self.pcs = set()
         self.fps = fps
         self.frameContainer = [None]
@@ -31,7 +31,8 @@ class WebRTCServer:
         )
         self._rtc_thread.start()
 
-        self.server = "ws://localhost:5000"
+        self.server = server
+        self.seat = seat
 
     def _start_background_loop(self, loop):
         asyncio.set_event_loop(loop)
@@ -43,8 +44,7 @@ class WebRTCServer:
         @sio.event
         async def connect():
             print("已连接到中心信令服务器")
-            # TODO 注册自己为设备
-            await sio.emit("checkin", {"device_id": "cam_001"})
+            await sio.emit("checkin", {"seat_id": self.seat})
 
         @sio.event
         async def offer(data):
@@ -69,25 +69,27 @@ class WebRTCServer:
     async def _handle_offer(self, offer):
         pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.pcs.add(pc)
-        print(time.time(), "Handle offer:1")
+        start = time.time()
 
         @pc.on("connectionstatechange")
         async def on_state_change():
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
+                print("Connection closed")
                 self.pcs.discard(pc)
+
+        @pc.on("datachannel")
+        def on_data_channel(channel):
+            route_channel(channel)
 
         await pc.setRemoteDescription(
             RTCSessionDescription(offer["sdp"], offer.get("type", "offer"))
         )
-        print(time.time(), "Handle offer:2")
-
         pc.addTrack(VideoFrameTrack(self.fps, self.frameContainer))
 
         answer = await pc.createAnswer()
-        print(time.time(), "Handle offer:3")
         await pc.setLocalDescription(answer)
-        print(time.time(), "Handle offer:4")
+        print(f"Handle offer in {(time.time() - start)*1000:.2f}ms")
         return pc.localDescription
 
     def start(self):
@@ -139,3 +141,17 @@ class VideoFrameTrack(VideoStreamTrack):
         return video_frame
 
 
+def route_channel(channel):
+    match channel.label:
+        case "latency":
+
+            @channel.on("message")
+            def on_message(message):
+                now = int(time.time() * 1000 + 0.5)
+                channel.send(str(now))
+
+                pre = int(message)
+                print(f"Latency: {now - pre}ms")
+
+        case _:
+            print(f"Unknown Channel {channel.label}")

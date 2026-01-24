@@ -14,7 +14,6 @@ from flask_socketio import SocketIO
 
 from llm.model import Model
 from llm import prompts
-from socket_server import latest_frames, init_socket_server
 from mongo_helper import get_default_helper
 
 # 设置静态文件目录
@@ -37,110 +36,6 @@ def handle_connect():
         socketio.emit("warning_update", list(current_warnings), to=request.sid)
     if current_dangers:
         socketio.emit("danger_update", list(current_dangers), to=request.sid)
-
-# 全局映射： device_id -> sid
-device_sids = {}
-
-from threading import Event
-
-pending_answers = {}
-
-@socketio.on("checkin")
-def checkin(data):
-    print(f"Device checkin: {data}")
-    device_id = data.get("device_id")
-    if device_id:
-        device_sids[device_id] = request.sid
-        print(f"Device {device_id} registered with sid {request.sid}")
-
-@socketio.on("answer")
-def handle_answer_from_device(data):
-    """
-    边缘设备发回 answer，data 结构: { "sdp": ..., "type": ..., "sid": "user_request_uuid" }
-    """
-    request_id = data.get("sid")
-    if request_id in pending_answers:
-        pending_answers[request_id]['data'] = data
-        pending_answers[request_id]['event'].set()
-
-# 摄像头相关请求
-
-import time
-import uuid
-
-@app.route("/api/offer", methods=["POST"])
-def offer():
-    print(time.time(), "Received offer")
-    if not request.is_json:
-        return jsonify({"error": "expected json"}), 400
-        
-    offer_data = request.get_json()
-    # 假设前端传递了 target_device_id，如果没传，默认找 cam_001
-    target_device_id = offer_data.get("device_id", "cam_001")
-    
-    device_sid = device_sids.get(target_device_id)
-    if not device_sid:
-         return jsonify({"error": f"Device {target_device_id} not online"}), 404
-
-    # 1. 生成唯一请求ID
-    request_id = str(uuid.uuid4())
-    
-    # 2. 准备 Event 等待 device 回应
-    completion_event = Event()
-    pending_answers[request_id] = {
-        'event': completion_event,
-        'data': None
-    }
-    
-    try:
-        # 3. 通过 SocketIO 把 offer 转发给边缘设备
-        # offer_data['sdp'], offer_data['type']
-        socketio.emit("offer", {
-            "sdp": offer_data["sdp"],
-            "type": offer_data.get("type", "offer"),
-            "sid": request_id  # 让 device 处理完把这个 id 带回来
-        }, to=device_sid)
-        
-        # 4. 阻塞等待 Answer (设置超时，例如 10秒)
-        if completion_event.wait(timeout=10):
-            answer_data = pending_answers[request_id]['data']
-            if answer_data:
-                # 构造符合前端预期的返回
-                return jsonify({
-                    "sdp": answer_data["sdp"],
-                    "type": answer_data["type"]
-                })
-            else:
-                 return jsonify({"error": "Empty answer received"}), 500
-        else:
-             return jsonify({"error": "Timeout waiting for device answer"}), 504
-             
-    finally:
-        # 清理
-        if request_id in pending_answers:
-            del pending_answers[request_id]
-
-
-
-@app.route("/api/streams/<camera_id>")
-def get_stream(camera_id):
-    if not camera_id:
-        return Response("", mimetype="multipart/x-mixed-replace; boundary=frame")
-
-    def generate():
-        global latest_frames
-        import time
-
-        while True:
-            frame_data = latest_frames.get(camera_id)
-            if frame_data:
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n"
-                )
-            time.sleep(0.001)  # 控制帧率
-
-    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 # 大模型相关请求
@@ -251,26 +146,6 @@ def create_inference():
 
 
 # 数据库相关请求
-
-
-@app.route("/api/employees", methods=["GET"])
-def get_employees():
-    helper = get_default_helper()
-    persons = helper.get_all_persons()
-    employees = []
-    for person in persons:
-        online = latest_frames.get(person["id"]) is not None
-        employees.append(
-            {
-                "id": person["id"],
-                "name": person.get("name"),
-                "online": online,
-                "last_login_time": person.get("last_login_time"),
-            }
-        )
-    helper.close()
-    return jsonify(employees)
-
 
 @app.route("/api/employees/<person_id>", methods=["GET"])
 def get_employee(person_id):
@@ -433,6 +308,12 @@ def emotion_update_task():
             socketio.sleep(1)
 
 
+from server.routes.seat import bp as seat_bp
+from .ws_service import socketio as wss
+
+wss.init_app(app)
+
+app.register_blueprint(seat_bp)
+
 if os.environ.get("WERKZEUG_RUN_MAIN"):
-    init_socket_server()
     socketio.start_background_task(emotion_update_task)
