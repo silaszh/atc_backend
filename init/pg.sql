@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS chat(
 
 CREATE TABLE IF NOT EXISTS message(
     chat_id INT NOT NULL,
-    sequence INT NOT NULL,
+    time TIMESTAMPTZ NOT NULL,
     content JSONB NOT NULL,
-    PRIMARY KEY (chat_id, sequence),
+    PRIMARY KEY (chat_id, time),
     FOREIGN KEY (chat_id) REFERENCES chat(chat_id) ON DELETE CASCADE
 );
 

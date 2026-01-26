@@ -1,6 +1,7 @@
 import os
 
 import psycopg2
+from psycopg2.extras import Json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,10 +35,78 @@ class PgHelper:
     def update_login_time(self, seat_id):
         cursor = self.connection.cursor()
         cursor.execute(
-            "UPDATE seat SET last_login_time = NOW() WHERE seat_id=%s", (seat_id,)
+            "UPDATE seat SET last_login_time = NOW() WHERE seat_id =%s", (seat_id,)
         )
         self.connection.commit()
         cursor.close()
+
+    def insert_state(self, seat_id, timestamp, state_data):
+        # 保证 seat_id, timestamp 不为空
+        cursor = self.connection.cursor()
+        if not state_data:
+            query = f"INSERT INTO state (seat_id, timestamp) VALUES (%s, %s)"
+        else:
+            columns = ", ".join(state_data.keys())
+            values = ", ".join(["%s"] * len(state_data))
+            query = f"INSERT INTO state (seat_id, timestamp, {columns}) VALUES (%s, %s, {values})"
+
+        cursor.execute(query, (seat_id, timestamp) + tuple(state_data.values()))
+        self.connection.commit()
+        cursor.close()
+
+    def create_chat(self):
+        cursor = self.connection.cursor()
+        cursor.execute("INSERT INTO chat (time) VALUES (NOW()) RETURNING chat_id")
+        chat_id = cursor.fetchone()[0]
+        self.connection.commit()
+        cursor.close()
+        return chat_id
+
+    def update_chat(self, chat_id, title=None):
+        """
+        更新chat，修改title和更新时间
+        """
+        cursor = self.connection.cursor()
+        if title is None:
+            cursor.execute(
+                "UPDATE chat SET time = NOW() WHERE chat_id = %s", (chat_id,)
+            )
+        else:
+            cursor.execute(
+                "UPDATE chat SET title = %s, time = NOW() WHERE chat_id = %s",
+                (title, chat_id),
+            )
+        self.connection.commit()
+        cursor.close()
+
+    def get_chats(self):
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT chat_id, title, time FROM chat ORDER BY time DESC")
+        chats = [
+            {"chat_id": row[0], "title": row[1], "time": row[2]}
+            for row in cursor.fetchall()
+        ]
+        cursor.close()
+        return chats
+
+    def append_msg_to_chat(self, chat_id, msg):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT INTO message (chat_id, time, content) VALUES (%s, NOW(), %s)",
+            (chat_id, Json(msg)),
+        )
+        self.connection.commit()
+        cursor.close()
+
+    def get_msg_of_chat(self, chat_id):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT content FROM message WHERE chat_id = %s ORDER BY time ASC",
+            (chat_id,),
+        )
+        messages = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return messages
 
     def close(self):
         if self.connection:

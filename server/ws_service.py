@@ -32,6 +32,20 @@ def checkin(data):
         print(f"Device {seat_id} registered with sid {request.sid}")
 
 
+@socketio.on("disconnect")
+def handle_disconnect():
+    disconnect_sid = request.sid
+    print(f"Client disconnected: {disconnect_sid}")
+
+    for seat_id, sid in list(online_seat.items()):
+        if sid == disconnect_sid:
+            # 双重检查：确保当前内存中的 sid 仍然是断开连接的那个 sid
+            if online_seat.get(seat_id) == disconnect_sid:
+                del online_seat[seat_id]
+                print(f"Device {seat_id} disconnected and removed from online_seat")
+            break
+
+
 @socketio.on("answer")
 def handle_answer_from_device(data):
     """
@@ -41,5 +55,3 @@ def handle_answer_from_device(data):
     if request_id in pending_answers:
         pending_answers[request_id]["data"] = data
         pending_answers[request_id]["event"].set()
-
-

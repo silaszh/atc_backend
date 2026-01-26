@@ -73,34 +73,3 @@ def offer():
         # 清理
         if request_id in pending_answers:
             del pending_answers[request_id]
-
-
-# @bp.route("/api/states", methods=["POST"])
-# def create_state():
-#     if request.is_json:
-#         data = request.get_json()
-#         if "id" not in data:
-#             return jsonify({"error": "Missing id"}), 400
-
-#         helper = get_default_helper()
-#         person_id = data["id"]
-#         person = helper.get_person_by_id(person_id)
-
-#         log_data = {k: v for k, v in data.items() if k not in ["name", "age", "id"]}
-#         if "time" in log_data:
-#             log_data["timestamp"] = log_data.pop("time")
-#         log_data["person_id"] = person_id
-
-#         if not person:
-#             person_data = {
-#                 "id": person_id,
-#                 "name": data.get("name"),
-#                 "age": data.get("age"),
-#             }
-#             helper.create_person(person_data)
-#         helper.insert_state_log(log_data)
-
-#         helper.close()
-#         return jsonify({"status": "success"}), 200
-#     else:
-#         return jsonify({"error": "Invalid input"}), 400

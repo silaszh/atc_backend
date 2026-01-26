@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from flask import Flask, request, jsonify, Response, redirect
 from flask_socketio import SocketIO
 
-from llm.model import Model
+from llm.model import Model as OldModel
+from .llm.nmodel import Model
 from llm import prompts
 from mongo_helper import get_default_helper
 
@@ -20,9 +21,10 @@ from mongo_helper import get_default_helper
 app = Flask(__name__, static_folder="../static", static_url_path="/")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+# model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+model = Model("mimo-v2-flash")
 
-v_model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+v_model = OldModel(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 v_model.using_model = v_model.models["GLM"]
 
 # 全局状态存储
@@ -39,23 +41,6 @@ def handle_connect():
 
 
 # 大模型相关请求
-
-
-@app.route("/api/chats", methods=["POST"])
-def create_chat():
-    chat_id = model.newContext(prompts.chat_prompt)
-    return jsonify({"chat_id": chat_id})
-
-
-@app.route("/api/chats/<chat_id>/messages", methods=["POST"])
-def send_message(chat_id):
-    if request.is_json:
-        data = request.get_json()
-        print(data)
-        msg = model.chat(int(chat_id), data["message"])
-        return jsonify({"message": msg})
-    else:
-        return jsonify({"error": "Invalid input"}), 400
 
 
 def parse_analysis_result(msg):
@@ -131,73 +116,6 @@ def create_analysis(person_id):
     analysis_result = parse_analysis_result(msg)
     print(analysis_result)
     return jsonify({"online": True, "analysis": analysis_result})
-
-
-@app.route("/api/inferences", methods=["POST"])
-def create_inference():
-    if request.is_json:
-        data = request.get_json()
-        chat_id = model.newContext(prompts.infer_prompt)
-        msg = model.chat(chat_id, json.dumps(data))
-        model.deleteContext(chat_id)
-        return jsonify({"state": msg})
-    else:
-        return jsonify({"error": "Invalid input"}), 400
-
-
-# 数据库相关请求
-
-@app.route("/api/employees/<person_id>", methods=["GET"])
-def get_employee(person_id):
-    helper = get_default_helper()
-    person = helper.get_person_by_id(person_id)
-    helper.close()
-
-    if person:
-        return jsonify(
-            {
-                "id": person["id"],
-                "name": person.get("name"),
-                "age": person.get("age"),
-                "avatar": person.get("avatar", "/logo.png"),
-                "last_login_time": person.get("last_login_time"),
-            }
-        )
-    else:
-        return jsonify({"error": "Person not found"}), 404
-
-
-@app.route("/api/states", methods=["POST"])
-def create_state():
-    if request.is_json:
-        data = request.get_json()
-        if "id" not in data:
-            return jsonify({"error": "Missing id"}), 400
-
-        helper = get_default_helper()
-        person_id = data["id"]
-        person = helper.get_person_by_id(person_id)
-
-        # 准备日志数据：删除 name、age 和 id，并将 time 改为 timestamp，添加 person_id
-        log_data = {k: v for k, v in data.items() if k not in ["name", "age", "id"]}
-        if "time" in log_data:
-            log_data["timestamp"] = log_data.pop("time")
-        log_data["person_id"] = person_id
-
-        if not person:
-            # 不存在，创建 person，并插入 state_logs
-            person_data = {
-                "id": person_id,
-                "name": data.get("name"),
-                "age": data.get("age"),
-            }
-            helper.create_person(person_data)
-        helper.insert_state_log(log_data)
-
-        helper.close()
-        return jsonify({"status": "success"}), 200
-    else:
-        return jsonify({"error": "Invalid input"}), 400
 
 
 @app.route("/", methods=["GET"])
@@ -308,12 +226,16 @@ def emotion_update_task():
             socketio.sleep(1)
 
 
-from server.routes.seat import bp as seat_bp
+from .routes.model import bp as model_bp
+from .routes.seat import bp as seat_bp
+from .routes.state import bp as state_bp
 from .ws_service import socketio as wss
 
 wss.init_app(app)
 
+app.register_blueprint(model_bp)
 app.register_blueprint(seat_bp)
+app.register_blueprint(state_bp)
 
 if os.environ.get("WERKZEUG_RUN_MAIN"):
     socketio.start_background_task(emotion_update_task)
