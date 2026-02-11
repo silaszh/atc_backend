@@ -8,19 +8,22 @@ from ..pg_helper import get_helper
 
 bp = Blueprint("model", __name__)
 
-model = Model("mimo-v2-flash")
+model = Model("ZhipuAI/GLM-4.7-Flash")
 
 
 def sse_event(data, event="message"):
     return f"event: {event}\ndata: {data}\n\n"
 
 
-def sse_wrapper(chat_id, message):
-    yield sse_event(chat_id, "chat_id")
+def sse_wrapper(chat_id, message, new_chat=False):
+    if new_chat:
+        yield sse_event(chat_id, "chat_id")
     start = time.time()
     stream = model.stream_chat_on(chat_id, message)
     for text in stream:
         yield sse_event(text)
+    if new_chat:
+        yield sse_event(model.summarize_chat(chat_id), "summary")
     yield sse_event(time.time() - start, "close")
 
 
@@ -39,7 +42,7 @@ def create_chat():
         data = request.get_json()
         if isinstance(data["prompt"], str):
             return Response(
-                sse_wrapper(chat_id, data["prompt"]),
+                sse_wrapper(chat_id, data["prompt"], new_chat=True),
                 mimetype="text/event-stream",
             )
     return jsonify({"chat_id": chat_id})

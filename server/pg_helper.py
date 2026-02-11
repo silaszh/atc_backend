@@ -1,7 +1,7 @@
 import os
 
 import psycopg2
-from psycopg2.extras import Json
+from psycopg2.extras import Json, DictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -40,6 +40,26 @@ class PgHelper:
         self.connection.commit()
         cursor.close()
 
+    def get_seat_by_id(self, seat_id):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT seat_id, name, last_login_time FROM seat WHERE seat_id = %s",
+            (seat_id,),
+        )
+        seat = cursor.fetchone()
+        cursor.close()
+        return seat
+
+    def get_seat_by_name(self, name):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT seat_id, name, last_login_time FROM seat WHERE name = %s",
+            (name,),
+        )
+        seat = cursor.fetchone()
+        cursor.close()
+        return seat
+
     def insert_state(self, seat_id, timestamp, state_data):
         # 保证 seat_id, timestamp 不为空
         cursor = self.connection.cursor()
@@ -53,6 +73,27 @@ class PgHelper:
         cursor.execute(query, (seat_id, timestamp) + tuple(state_data.values()))
         self.connection.commit()
         cursor.close()
+
+    def get_all_states(self, number_per_seat=5):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        query = """\
+SELECT * FROM (
+  SELECT
+    s.*,
+    ROW_NUMBER() OVER (PARTITION BY seat_id ORDER BY "timestamp" DESC) AS rn
+  FROM state s
+) t
+WHERE t.rn <= %s
+ORDER BY t.seat_id, t."timestamp" DESC;
+"""
+        cursor.execute(query, (number_per_seat,))
+        states = cursor.fetchall()
+        cursor.close()
+        states = [dict(row) for row in states]
+        for state in states:
+            state.pop("rn", None)
+            state["timestamp"] = state["timestamp"].isoformat()
+        return states
 
     def create_chat(self):
         cursor = self.connection.cursor()

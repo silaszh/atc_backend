@@ -1,10 +1,17 @@
+import json
 import os
 
 import openai
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageFunctionToolCall,
+)
+from openai.types.chat.chat_completion_message_function_tool_call import Function
 
 from dotenv import load_dotenv
 from ..pg_helper import get_helper
+from . import prompts
+from .tools import tool_scheme
 
 load_dotenv()
 
@@ -63,7 +70,7 @@ class Model:
         messages = helper.get_msg_of_chat(chat_id)
         ctx = Context(chat_id)
         ctx.messages = messages
-        print(messages)
+        # print(messages)
         return ctx
 
     def _chat_api(self, messages, using_tools=None, stream=False):
@@ -98,23 +105,37 @@ class Model:
             # 忽略 img_url, video_url
             msg = {"role": "user", "content": message}
 
+        tool_map = {}
+        tool_list = []
+        for t in using_tools or []:
+            scheme = tool_scheme(t)
+            tool_map[scheme["function"]["name"]] = t
+            tool_list.append(scheme)
+
         with ctx:
             ctx.append(msg)
-            res = self._chat_api(ctx.messages, using_tools)
-
-            # while res.choices[0].message.tool_calls:
-            #     ctx.append(res.choices[0].message)
-            #     # print("工具调用：" + ",".join(tc.function.name for tc in res.choices[0].message.tool_calls))
-            #     for tool_call in res.choices[0].message.tool_calls:
-            #         result = tc.handle_tool_calls(tool_call)
-            #         ctx.append(
-            #             {
-            #                 "role": "tool",
-            #                 "tool_call_id": tool_call.id,
-            #                 "content": result,
-            #             }
-            #         )
-            #     res = self._chat_api(ctx.messages, using_tools)
+            res = self._chat_api(ctx.messages, tool_list)
+            print(res.choices[0].message)
+            while res.choices[0].message.tool_calls:
+                ctx.append(format_assistant_message(res.choices[0].message))
+                print(
+                    "工具调用："
+                    + ",".join(
+                        tc.function.name for tc in res.choices[0].message.tool_calls
+                    )
+                )
+                for tool_call in res.choices[0].message.tool_calls:
+                    result = tool_map[tool_call.function.name].invoke(
+                        json.loads(tool_call.function.arguments)
+                    )
+                    ctx.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result,
+                        }
+                    )
+                res = self._chat_api(ctx.messages, tool_list)
 
             msg = format_assistant_message(res.choices[0].message)
             ctx.append(msg)
@@ -143,38 +164,84 @@ class Model:
             # 忽略 img_url, video_url
             msg = {"role": "user", "content": message}
 
+        tool_map = {}
+        tool_list = []
+        for t in using_tools or []:
+            scheme = tool_scheme(t)
+            tool_map[scheme["function"]["name"]] = t
+            tool_list.append(scheme)
+
         with ctx:
             ctx.append(msg)
-            stream = self._chat_api(ctx.messages, using_tools, stream=True)
-            content = ""
-            for chunk in stream:
-                choice = chunk.choices[0]
-                delta = choice.delta
-                if choice.finish_reason is None:
-                    content += delta.content
-                    yield delta.content
-                else:
-                    print("")
-                    print(choice.finish_reason)
-                    print(delta)
-            # while res.choices[0].message.tool_calls:
-            #     ctx.append(res.choices[0].message)
-            #     # print("工具调用：" + ",".join(tc.function.name for tc in res.choices[0].message.tool_calls))
-            #     for tool_call in res.choices[0].message.tool_calls:
-            #         result = tc.handle_tool_calls(tool_call)
-            #         ctx.append(
-            #             {
-            #                 "role": "tool",
-            #                 "tool_call_id": tool_call.id,
-            #                 "content": result,
-            #             }
-            #         )
-            #     res = self._chat_api(ctx.messages, using_tools)
-            msg = format_assistant_message(
-                ChatCompletionMessage(role="assistant", content=content)
-            )
-            ctx.append(msg)
-        return
+            while True:
+                stream = self._chat_api(ctx.messages, tool_list, stream=True)
+                content = ""
+                calling_tools = []
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    if delta and delta.content:
+                        content += delta.content
+                        yield delta.content
+                    if choice.finish_reason:
+                        print(choice.finish_reason)
+                    if delta and delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            if tc.index >= len(calling_tools):
+                                calling_tools.append(
+                                    {
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": tc.function.arguments or "",
+                                        },
+                                        "id": tc.id,
+                                        "type": tc.type,
+                                    }
+                                )
+                                print("工具调用：" + str(tc.index))
+                            else:
+                                calling_tools[tc.index]["function"][
+                                    "arguments"
+                                ] += tc.function.arguments
+                for tc in calling_tools:
+                    print(tc)
+                # 构建消息
+                msg = format_assistant_message(
+                    ChatCompletionMessage(
+                        role="assistant",
+                        content=content,
+                        tool_calls=[
+                            ChatCompletionMessageFunctionToolCall(
+                                function=Function(
+                                    name=tc["function"]["name"],
+                                    arguments=tc["function"]["arguments"],
+                                ),
+                                id=tc["id"],
+                                type=tc["type"],
+                            )
+                            for tc in calling_tools
+                        ],
+                    )
+                )
+                ctx.append(msg)
+                # 处理工具调用
+                for tool_call in calling_tools:
+                    result = tool_map[tool_call["function"]["name"]].invoke(
+                        json.loads(tool_call["function"]["arguments"])
+                    )
+                    ctx.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result,
+                        }
+                    )
+                if not calling_tools:
+                    print("没有工具调用，结束对话")
+                    break
+        return msg["content"]
 
     def chat_on(self, chat_id, message, img_url=None, video_url=None, using_tools=None):
         ctx = self.contexts.get(chat_id)
@@ -197,6 +264,18 @@ class Model:
     def stream_chat(self, message, img_url=None, video_url=None, using_tools=None):
         ctx = Context(-1, sync_with_db=False)
         return self._stream_chat(ctx, message, img_url, video_url, using_tools)
+
+    def summarize_chat(self, chat_id):
+        ctx = self.contexts.get(chat_id)
+        if ctx is None:
+            ctx = self._load_chat(chat_id)
+        tmp_ctx = Context(-1, sync_with_db=False)
+        tmp_ctx.messages = ctx.messages
+        summary = self._chat(tmp_ctx, prompts.summarize_chat_prompt)
+        pg_helper = get_helper()
+        pg_helper.update_chat(chat_id, title=summary)
+        pg_helper.close()
+        return summary
 
 
 def format_assistant_message(msg: ChatCompletionMessage):
