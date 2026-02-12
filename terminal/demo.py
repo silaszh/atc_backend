@@ -69,21 +69,32 @@ def run_vid(server, video_path):
     print("Video released")
 
 
+def mock_monitoring_data(server):
+    count = 0
+    while not stop_event.is_set():
+        data = f"Simulated monitoring data {count}"
+        server.send_data(data)
+        count += 1
+        time.sleep(1)
+
+
 def simu_device(seat, run_fn, *args):
     server = WebRTCServer(fps=FPS, seat=seat)
     server.start()
     t = threading.Thread(target=run_fn, args=(server, *args))
+    t_monitor = threading.Thread(target=mock_monitoring_data, args=(server,))
     t.start()
-    return t
+    t_monitor.start()
+    return t, t_monitor
 
 
 if __name__ == "__main__":
     device_pool = [
         simu_device(4, run_cam, 0),
         simu_device(7, run_ani),
-        simu_device(8, run_vid, "E:/Desktop/vid/1.mp4"),
-        simu_device(9, run_vid, "E:/Desktop/vid/2.mp4"),
-        simu_device(10, run_img, "E:/Desktop/vid/i1.png"),
+        # simu_device(8, run_vid, "E:/Desktop/vid/1.mp4"),
+        # simu_device(9, run_vid, "E:/Desktop/vid/2.mp4"),
+        # simu_device(10, run_img, "E:/Desktop/vid/i1.png"),
     ]
     try:
         print("Running... Press Ctrl+C to stop.")
@@ -92,7 +103,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nStopping...")
         stop_event.set()
-        for t in device_pool:
+        for t, t_monitor in device_pool:
             if t:
                 t.join()
+            if t_monitor:
+                t_monitor.join()
         print("Exiting...")

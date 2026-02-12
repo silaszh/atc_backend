@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from flask import Flask, request, jsonify, Response, redirect
 from flask_socketio import SocketIO
 
-from llm.model import Model as OldModel
+# from llm.model import Model as OldModel
 from .llm.nmodel import Model
 from llm import prompts
 from mongo_helper import get_default_helper
@@ -24,8 +24,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # model = Model(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
 model = Model("mimo-v2-flash")
 
-v_model = OldModel(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
-v_model.using_model = v_model.models["GLM"]
+# v_model = OldModel(os.getenv("API_BASE_URL"), os.getenv("API_KEY"))
+# v_model.using_model = v_model.models["GLM"]
 
 # 全局状态存储
 current_warnings = set()
@@ -87,35 +87,35 @@ def parse_analysis_result(msg):
     return result
 
 
-@app.route("/api/analysis/<person_id>", methods=["POST"])
-def create_analysis(person_id):
-    if person_id not in latest_frames:
-        return jsonify({"online": False})
+# @app.route("/api/analysis/<person_id>", methods=["POST"])
+# def create_analysis(person_id):
+#     if person_id not in latest_frames:
+#         return jsonify({"online": False})
 
-    helper = get_default_helper()
-    recent_logs = helper.get_state_logs_by_person_id(person_id, limit=10)
-    helper.close()
+#     helper = get_default_helper()
+#     recent_logs = helper.get_state_logs_by_person_id(person_id, limit=10)
+#     helper.close()
 
-    log_data_list = []
-    for log in recent_logs:
-        if "_id" in log:
-            del log["_id"]
-        if "timestamp" in log:
-            log["timestamp"] = str(log["timestamp"])
-        log_data_list.append(log)
+#     log_data_list = []
+#     for log in recent_logs:
+#         if "_id" in log:
+#             del log["_id"]
+#         if "timestamp" in log:
+#             log["timestamp"] = str(log["timestamp"])
+#         log_data_list.append(log)
 
-    frame_data = latest_frames[person_id]
-    img = base64.b64encode(frame_data).decode("utf-8")
-    data = json.dumps(log_data_list)
+#     frame_data = latest_frames[person_id]
+#     img = base64.b64encode(frame_data).decode("utf-8")
+#     data = json.dumps(log_data_list)
 
-    chat_id = v_model.newContext(prompts.analyse_prompt)
-    print(data)
-    msg = v_model.chatWithImg(chat_id, data, img)
-    v_model.deleteContext(chat_id)
+#     chat_id = v_model.newContext(prompts.analyse_prompt)
+#     print(data)
+#     msg = v_model.chatWithImg(chat_id, data, img)
+#     v_model.deleteContext(chat_id)
 
-    analysis_result = parse_analysis_result(msg)
-    print(analysis_result)
-    return jsonify({"online": True, "analysis": analysis_result})
+#     analysis_result = parse_analysis_result(msg)
+#     print(analysis_result)
+#     return jsonify({"online": True, "analysis": analysis_result})
 
 
 @app.route("/", methods=["GET"])
