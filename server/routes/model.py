@@ -1,14 +1,20 @@
 import time
+import os
 from flask import Blueprint, Response, request, jsonify
+from dotenv import load_dotenv
 
 from ..llm.nmodel import Model
 from ..llm import prompts
+from ..llm.tools import get_all_seat_states, get_seat_id_by_name, get_seat_info
 
 from ..pg_helper import get_helper
 
+load_dotenv()
+
 bp = Blueprint("model", __name__)
 
-model = Model("ZhipuAI/GLM-4.7-Flash")
+model = Model(os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2-251201"))
+using_tools = [get_seat_id_by_name, get_seat_info]
 
 
 def sse_event(data, event="message"):
@@ -19,9 +25,13 @@ def sse_wrapper(chat_id, message, new_chat=False):
     if new_chat:
         yield sse_event(chat_id, "chat_id")
     start = time.time()
-    stream = model.stream_chat_on(chat_id, message)
-    for text in stream:
-        yield sse_event(text)
+    stream = model.stream_chat_on(chat_id, message, using_tools=using_tools)
+    for text_type, text in stream:
+        if text_type == "sep":
+            yield sse_event(time.time() - start, "sep")
+            start = time.time()
+        else:
+            yield sse_event(text, text_type)
     if new_chat:
         yield sse_event(model.summarize_chat(chat_id), "summary")
     yield sse_event(time.time() - start, "close")

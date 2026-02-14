@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS seat(
 CREATE TABLE IF NOT EXISTS chat(
     chat_id SERIAL NOT NULL,
     title VARCHAR(64),
-    time DATE,
+    time TIMESTAMPTZ,
     PRIMARY KEY (chat_id)
 );
 

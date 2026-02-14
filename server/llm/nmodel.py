@@ -38,6 +38,7 @@ class Context:
 
     def __exit__(self, type, value, trace):
         if self.helper:
+            self.helper.update_chat(self.chat_id)
             self.helper.close()
 
 
@@ -184,7 +185,7 @@ class Model:
                     delta = choice.delta
                     if delta and delta.content:
                         content += delta.content
-                        yield delta.content
+                        yield ("message", delta.content)
                     if choice.finish_reason:
                         print(choice.finish_reason)
                     if delta and delta.tool_calls:
@@ -231,6 +232,7 @@ class Model:
                     result = tool_map[tool_call["function"]["name"]].invoke(
                         json.loads(tool_call["function"]["arguments"])
                     )
+                    yield ("tool", result)
                     ctx.append(
                         {
                             "role": "tool",
@@ -241,6 +243,7 @@ class Model:
                 if not calling_tools:
                     print("没有工具调用，结束对话")
                     break
+                yield ("sep", None)
         return msg["content"]
 
     def chat_on(self, chat_id, message, img_url=None, video_url=None, using_tools=None):

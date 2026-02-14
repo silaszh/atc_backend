@@ -42,6 +42,7 @@ def get_all_seat_states():
         seat_id = state["seat_id"]
         if seat_id in seat_states:
             seat_states[seat_id].add_state(state)
+    # FIXME 无法直接JSON序列化datetime对象
     return json.dumps([s.to_dict() for s in seat_states.values()])
 
 
@@ -80,7 +81,8 @@ def get_seat_info(seat_id: int):
                 "seat_id": seat[0],
                 "name": seat[1],
                 "online": online_seat.get(seat[0]) is not None,
-                "last_login_time": seat[2],
+                # FIXME 无法直接JSON序列化datetime对象，暂时不返回登录时间
+                # "last_login_time": seat[2],
             }
         )
     else:
