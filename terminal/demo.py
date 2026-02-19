@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 import threading
 
-from webrtc_server import WebRTCServer
+from .webrtc_server import WebRTCServer
 
 FPS = 30
 stop_event = threading.Event()

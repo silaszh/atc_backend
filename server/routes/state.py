@@ -39,3 +39,13 @@ def create_state():
         return jsonify({"status": "success"}), 200
     else:
         return jsonify({"error": "Invalid input"}), 400
+
+
+@bp.route("/api/osshook", methods=["POST"])
+def handle_webhook():
+    # TODO
+    print("Received webhook request")
+    print(request.json)     
+    data = request.get_json()
+    print(data["Key"])
+    return "OK", 200

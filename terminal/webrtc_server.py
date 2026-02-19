@@ -1,6 +1,7 @@
 import threading
 import time
 import asyncio
+from minio import Minio
 import socketio
 import numpy as np
 import cv2
@@ -18,10 +19,19 @@ from aiortc import (
 from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_TIME_BASE
 from dotenv import load_dotenv
 
+from .alert import Alert
+
 load_dotenv()
 
 WEBRTC_SERVER_URL = os.getenv("WEBRTC_SERVER_URL", "ws://localhost:5000")
 WEBRTC_DATA_HISTORY_MAXLEN = int(os.getenv("WEBRTC_DATA_HISTORY_MAXLEN", 200))
+
+minio_client = Minio(
+    endpoint=os.getenv("MINIO_ENDPOINT"),
+    access_key=os.getenv("MINIO_ACCESS_KEY"),
+    secret_key=os.getenv("MINIO_SECRET_KEY"),
+    secure=False,
+)
 
 
 class RingBuffer:
@@ -84,6 +94,7 @@ class WebRTCServer:
         self.fps = fps
         self.frameContainer = [None]
         self.hub = MonitoringHub()
+        self.sio = None
 
         self.background_loop = asyncio.new_event_loop()
 
@@ -104,6 +115,7 @@ class WebRTCServer:
     async def _websocket_start(self):
         await self.hub.start()
         sio = socketio.AsyncClient()
+        self.sio = sio
 
         @sio.event
         async def connect():
@@ -171,6 +183,21 @@ class WebRTCServer:
 
     def send_data(self, data):
         self.hub.send_data(data)
+
+    def alert(self, timestamp, summary, level):
+        payload = {
+            "seat_id": self.seat,
+            "timestamp": timestamp,
+            "summary": summary,
+            "level": level,
+        }
+        if self.sio is not None and self.sio.connected:
+            asyncio.run_coroutine_threadsafe(
+                self.sio.emit("alert", payload), self.background_loop
+            )
+        else:
+            print("Warning: sio is not connected, skip signaling alert emit")
+        return Alert(name=f"seat{self.seat}_{timestamp}.mp4", client=minio_client)
 
     def stop(self):
         if self.background_loop.is_running():

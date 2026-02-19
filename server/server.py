@@ -14,8 +14,6 @@ from flask_socketio import SocketIO
 
 # from llm.model import Model as OldModel
 from .llm.nmodel import Model
-from llm import prompts
-from mongo_helper import get_default_helper
 
 # 设置静态文件目录
 app = Flask(__name__, static_folder="../static", static_url_path="/")

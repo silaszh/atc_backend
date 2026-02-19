@@ -55,3 +55,9 @@ def handle_answer_from_device(data):
     if request_id in pending_answers:
         pending_answers[request_id]["data"] = data
         pending_answers[request_id]["event"].set()
+
+
+@socketio.on("alert")
+def handle_alert(data):
+    # TODO { "seat_id": ..., "timestamp": ..., "summary": ..., "level": ... }
+    print(f"Received alert from device: {data}")
