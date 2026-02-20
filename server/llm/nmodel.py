@@ -252,8 +252,17 @@ class Model:
             ctx = self._load_chat(chat_id)
         return self._chat(ctx, message, img_url, video_url, using_tools)
 
-    def chat(self, message, img_url=None, video_url=None, using_tools=None):
+    def chat(
+        self,
+        message,
+        img_url=None,
+        video_url=None,
+        using_tools=None,
+        system_prompt=None,
+    ):
         ctx = Context(-1, sync_with_db=False)
+        if system_prompt:
+            ctx.messages.append({"role": "system", "content": system_prompt})
         return self._chat(ctx, message, img_url, video_url, using_tools)
 
     def stream_chat_on(
@@ -264,17 +273,25 @@ class Model:
             ctx = self._load_chat(chat_id)
         return self._stream_chat(ctx, message, img_url, video_url, using_tools)
 
-    def stream_chat(self, message, img_url=None, video_url=None, using_tools=None):
+    def stream_chat(
+        self,
+        message,
+        img_url=None,
+        video_url=None,
+        using_tools=None,
+        system_prompt=None,
+    ):
         ctx = Context(-1, sync_with_db=False)
+        if system_prompt:
+            ctx.messages.append({"role": "system", "content": system_prompt})
         return self._stream_chat(ctx, message, img_url, video_url, using_tools)
 
     def summarize_chat(self, chat_id):
         ctx = self.contexts.get(chat_id)
         if ctx is None:
             ctx = self._load_chat(chat_id)
-        tmp_ctx = Context(-1, sync_with_db=False)
-        tmp_ctx.messages = ctx.messages
-        summary = self._chat(tmp_ctx, prompts.summarize_chat_prompt)
+        content = json.dumps(ctx.messages)
+        summary = self.chat(content, system_prompt=prompts.summarize_chat_prompt)
         pg_helper = get_helper()
         pg_helper.update_chat(chat_id, title=summary)
         pg_helper.close()
