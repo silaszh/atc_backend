@@ -84,7 +84,13 @@ class Model:
         )
 
     def _chat(
-        self, ctx: Context, message, img_url=None, video_url=None, using_tools=None
+        self,
+        ctx: Context,
+        message,
+        img_url=None,
+        video_url=None,
+        using_tools=None,
+        tool_loop=True,
     ):
         if self.multi:
             content = [{"type": "text", "text": message}]
@@ -118,7 +124,8 @@ class Model:
             res = self._chat_api(ctx.messages, tool_list)
             print(res.choices[0].message)
             while res.choices[0].message.tool_calls:
-                ctx.append(format_assistant_message(res.choices[0].message))
+                msg = format_assistant_message(res.choices[0].message)
+                ctx.append(msg)
                 print(
                     "工具调用："
                     + ",".join(
@@ -136,6 +143,8 @@ class Model:
                             "content": result,
                         }
                     )
+                if not tool_loop:
+                    return msg["content"]
                 res = self._chat_api(ctx.messages, tool_list)
 
             msg = format_assistant_message(res.choices[0].message)
@@ -246,11 +255,21 @@ class Model:
                 yield ("sep", None)
         return msg["content"]
 
-    def chat_on(self, chat_id, message, img_url=None, video_url=None, using_tools=None):
+    def chat_on(
+        self,
+        chat_id,
+        message,
+        img_url=None,
+        video_url=None,
+        using_tools=None,
+        tool_loop=True,
+    ):
         ctx = self.contexts.get(chat_id)
         if ctx is None:
             ctx = self._load_chat(chat_id)
-        return self._chat(ctx, message, img_url, video_url, using_tools)
+        return self._chat(
+            ctx, message, img_url, video_url, using_tools, tool_loop=tool_loop
+        )
 
     def chat(
         self,
@@ -259,11 +278,14 @@ class Model:
         video_url=None,
         using_tools=None,
         system_prompt=None,
+        tool_loop=True,
     ):
         ctx = Context(-1, sync_with_db=False)
         if system_prompt:
             ctx.messages.append({"role": "system", "content": system_prompt})
-        return self._chat(ctx, message, img_url, video_url, using_tools)
+        return self._chat(
+            ctx, message, img_url, video_url, using_tools, tool_loop=tool_loop
+        )
 
     def stream_chat_on(
         self, chat_id, message, img_url=None, video_url=None, using_tools=None

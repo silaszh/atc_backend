@@ -3,7 +3,7 @@ import os
 from flask import Blueprint, Response, request, jsonify
 from dotenv import load_dotenv
 
-from ..llm.nmodel import Model
+from ..llm.model import Model
 from ..llm import prompts
 from ..llm.tools import get_all_seat_states, get_seat_id_by_name, get_seat_info
 
@@ -13,7 +13,7 @@ load_dotenv()
 
 bp = Blueprint("model", __name__)
 
-model = Model(os.getenv("MODEL_NAME", "deepseek/deepseek-v3.2-251201"))
+model = Model(os.getenv("CHAT_MODEL"))
 using_tools = [get_seat_id_by_name, get_seat_info]
 
 

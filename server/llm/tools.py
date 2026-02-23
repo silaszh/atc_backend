@@ -94,6 +94,24 @@ def get_seat_alert(seat_id: int):
     # TODO
     return json.dumps([])
 
+# TODO 需要更加详细的类型描述
+@tool
+def verify_system_judgment(
+    is_system_correct: bool,
+    corrected_analysis: str,
+    recommendation: str,
+    abnormal_segments: list,
+):
+    """验证系统判断的正确性，并提供纠正分析、建议和异常行为片段"""
+    return json.dumps(
+        {
+            "is_system_correct": is_system_correct,
+            "corrected_analysis": corrected_analysis,
+            "recommendation": recommendation,
+            "abnormal_segments": abnormal_segments,
+        }
+    )
+
 
 def tool_scheme(tool_func):
     schema = tool_func.args_schema.model_json_schema()
