@@ -1,20 +1,14 @@
+from datetime import datetime, timezone
+
 from flask import request
 from flask_socketio import SocketIO
 
-from .data_store import online_seat, pending_answers
+from .data_store import online_seat, pending_answers, alert_map
 from .pg_helper import get_helper
+from .alert_stream import ALERT_STREAM
 
 # 初始化不绑定 app 的 SocketIO
 socketio = SocketIO(cors_allowed_origins="*")
-
-# current_warnings = set()
-# current_dangers = set()
-# @socketio.on("connect")
-# def handle_connect():
-#     if current_warnings:
-#         socketio.emit("warning_update", list(current_warnings), to=request.sid)
-#     if current_dangers:
-#         socketio.emit("danger_update", list(current_dangers), to=request.sid)
 
 
 @socketio.on("checkin")
@@ -59,5 +53,15 @@ def handle_answer_from_device(data):
 
 @socketio.on("alert")
 def handle_alert(data):
-    # TODO { "seat_id": ..., "timestamp": ..., "summary": ..., "level": ... }
+    # * { "seat_id": ..., "timestamp": ..., "summary": ..., "level": ... }
+    helper = get_helper()
+    alert_id = helper.insert_alert(
+        seat_id=data.get("seat_id"),
+        timestamp=datetime.fromtimestamp(data.get("timestamp"), timezone.utc),
+        summary=data.get("summary"),
+        level=data.get("level"),
+    )
+    helper.close()
+    alert_map[f"seat{data.get('seat_id')}_{data.get('timestamp')}"] = alert_id
+    ALERT_STREAM.ingest(alert_id, "alert", data)
     print(f"Received alert from device: {data}")

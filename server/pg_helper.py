@@ -149,6 +149,35 @@ ORDER BY t.seat_id, t."timestamp" DESC;
         cursor.close()
         return messages
 
+    def insert_alert(self, seat_id, timestamp, summary, level):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT INTO alert (seat_id, timestamp, summary, level) VALUES (%s, %s, %s, %s) RETURNING alert_id",
+            (seat_id, timestamp, summary, level),
+        )
+        alert_id = cursor.fetchone()[0]
+        self.connection.commit()
+        cursor.close()
+        return alert_id
+
+    def update_alert(self, alert_id, reason, suggestion, video, tag):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "UPDATE alert SET settled = FALSE, reason = %s, suggestion = %s, video = %s, tag = %s WHERE alert_id = %s",
+            (reason, suggestion, video, Json(tag), alert_id),
+        )
+        self.connection.commit()
+        cursor.close()
+
+    def settle_alert(self, alert_id):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "UPDATE alert SET settled = TRUE WHERE alert_id = %s",
+            (alert_id,),
+        )
+        self.connection.commit()
+        cursor.close()
+
     def close(self):
         if self.connection:
             self.connection.close()

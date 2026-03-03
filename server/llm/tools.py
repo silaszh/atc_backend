@@ -1,6 +1,9 @@
+from enum import Enum
+
 from langchain.tools import tool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import List, Literal, Optional
 
 import json
 
@@ -94,13 +97,46 @@ def get_seat_alert(seat_id: int):
     # TODO
     return json.dumps([])
 
-# TODO 需要更加详细的类型描述
-@tool
+
+class ActionType(str, Enum):
+    EYE_CLOSING = "eye_closing"
+    YAWNING = "yawning"
+    HEAD_DROOPING = "head_drooping"
+    STARING = "staring"
+    SLOW_RESPONSE = "slow_response"
+    OTHER = "other"
+
+
+class AbnormalSegment(BaseModel):
+    start_second: float = Field(ge=0, le=15, description="异常开始时间（秒，0~15）")
+    end_second: Optional[float] = Field(
+        None,
+        ge=0,
+        le=15,
+        description="异常结束时间（秒，若为瞬时事件可不填或等于 start_second）",
+    )
+    action_type: ActionType = Field(description="异常动作类型")
+    description: Optional[str] = Field(None, description="简要描述现象（可选）")
+
+
+class VerifySystemJudgmentInput(BaseModel):
+    """verify_system_judgment工具的输入参数"""
+
+    is_system_correct: bool = Field(description="系统判断是否正确")
+    corrected_analysis: str = Field(description="判定原因，基于视频内容详细解释")
+    recommendation: str = Field(description="针对当前情况的专业建议")
+    abnormal_segments: List[AbnormalSegment] = Field(
+        default_factory=list,
+        description="视频中所有异常行为片段的时间标记列表，若无异常则为空列表",
+    )
+
+
+@tool(args_schema=VerifySystemJudgmentInput)
 def verify_system_judgment(
     is_system_correct: bool,
     corrected_analysis: str,
     recommendation: str,
-    abnormal_segments: list,
+    abnormal_segments: List[AbnormalSegment],
 ):
     """验证系统判断的正确性，并提供纠正分析、建议和异常行为片段"""
     return json.dumps(
@@ -108,22 +144,11 @@ def verify_system_judgment(
             "is_system_correct": is_system_correct,
             "corrected_analysis": corrected_analysis,
             "recommendation": recommendation,
-            "abnormal_segments": abnormal_segments,
+            # FIXME 性能可能有问题
+            "abnormal_segments": [json.loads(s.model_dump_json()) for s in abnormal_segments],
         }
     )
 
 
 def tool_scheme(tool_func):
-    schema = tool_func.args_schema.model_json_schema()
-    return {
-        "type": "function",
-        "function": {
-            "name": schema.get("title", ""),
-            "description": schema.get("description", ""),
-            "parameters": {
-                "type": "object",
-                "properties": schema.get("properties", {}),
-                "required": schema.get("required", []),
-            },
-        },
-    }
+    return convert_to_openai_tool(tool_func)

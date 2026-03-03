@@ -1,9 +1,23 @@
+import os
 from datetime import datetime, timezone
-from flask import Blueprint, request, jsonify
+import json
+from flask import Blueprint, request, jsonify, Response, stream_with_context
+from dotenv import load_dotenv
 
+from ..data_store import alert_map
 from ..pg_helper import get_helper
+from ..minio_service import get_video_url
+from ..alert_stream import ALERT_STREAM
+from ..llm.model import Model
+from ..llm import prompts
+from ..llm.tools import verify_system_judgment
+
+load_dotenv()
 
 bp = Blueprint("state", __name__)
+
+model = Model(os.getenv("VISION_MODEL"))
+using_tools = [verify_system_judgment]
 
 
 @bp.route("/api/states", methods=["POST"])
@@ -44,8 +58,99 @@ def create_state():
 @bp.route("/api/osshook", methods=["POST"])
 def handle_webhook():
     # TODO
-    print("Received webhook request")
-    print(request.json)     
     data = request.get_json()
     print(data["Key"])
+    video_path = data["Key"]
+    print(get_video_url(video_path))
+    alert_key = data["Key"].split("/")[-1].replace(".mp4", "")
+    alert_id = alert_map.get(alert_key)
+    if not alert_id:
+        print(f"Alert ID not found for video {video_path} with key {alert_key}")
+        return "OK", 200
+    video_url = get_video_url(video_path)
+    ALERT_STREAM.ingest(alert_id, "alert-video", {"video_url": video_url})
+    state = ALERT_STREAM.get_state(alert_id, "alert")
+    print(state)
+    msg, tool_res = model.chat(
+        state["summary"],
+        video_url=video_url,
+        using_tools=using_tools,
+        system_prompt=prompts.video_analysis_prompt,
+        tool_loop=False,
+    )
+    tool_res = json.loads(tool_res)
+    print(msg)
+    import pprint
+
+    pprint.pprint(tool_res)
+
+    reason = tool_res.get("corrected_analysis", "无")
+    suggestion = tool_res.get("recommendation", "无")
+    tag = tool_res.get("abnormal_segments")
+
+    print(reason)
+    print(suggestion)
+    print(tag)
+
+    ALERT_STREAM.ingest(
+        alert_id,
+        "alert-llm",
+        {"reason": reason, "suggestion": suggestion, "tag": tag},
+    )
+    with ALERT_STREAM.persisting(alert_id):
+        helper = get_helper()
+        if tool_res["is_system_correct"]:
+            pass
+            helper.update_alert(alert_id, reason, suggestion, video_url, tag)
+        else:
+            pass
+        helper.close()
+        alert_map.pop(alert_key, None)
     return "OK", 200
+
+
+def _format_sse(event_name, payload, event_id=None):
+    message = ""
+    if event_id is not None:
+        message += f"id: {event_id}\n"
+    message += f"event: {event_name}\n"
+    message += f"data: {json.dumps(payload, ensure_ascii=True)}\n\n"
+    return message
+
+
+@bp.route("/api/alerts/now", methods=["GET"])
+def stream_alert_now():
+    def generate():
+        snapshot_events, cursor = ALERT_STREAM.open_stream_snapshot()
+        for event in snapshot_events:
+            yield _format_sse(
+                event_name=event["event_name"],
+                payload=event["payload"],
+                event_id=f"snapshot-{event['alert_id']}-{event['event_name']}",
+            )
+
+        while True:
+            events, latest_seq = ALERT_STREAM.wait_for_events(
+                cursor, timeout_seconds=25
+            )
+            if not events:
+                yield ": keepalive\n\n"
+                cursor = latest_seq
+                continue
+
+            for event in events:
+                yield _format_sse(
+                    event_name=event["event_name"],
+                    payload=event["payload"],
+                    event_id=event["seq"],
+                )
+            cursor = latest_seq
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return Response(
+        stream_with_context(generate()), headers=headers, mimetype="text/event-stream"
+    )

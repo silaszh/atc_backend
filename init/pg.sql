@@ -48,11 +48,12 @@ CREATE TABLE IF NOT EXISTS state(
   tsdb.hypertable
 );
 
-CREATE TYPE ALERT_LEVEL AS ENUM ('低', '中', '高', '严重');
+CREATE TYPE ALERT_LEVEL AS ENUM ('轻微', '中等', '严重');
 
 CREATE TABLE IF NOT EXISTS alert(
-    seat_id INT NOT NULL,
+    alert_id SERIAL NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
+    seat_id INT NOT NULL,
     summary VARCHAR,
     level ALERT_LEVEL,
     -- base ENUM(),
@@ -60,9 +61,9 @@ CREATE TABLE IF NOT EXISTS alert(
     settled BOOLEAN,
     reason TEXT,
     suggestion TEXT,    
-    video VARCHAR(128),
+    video TEXT,
     tag JSONB,
-    PRIMARY KEY (seat_id, timestamp),
+    PRIMARY KEY (alert_id, timestamp),
     FOREIGN KEY (seat_id) REFERENCES seat(seat_id)
 ) WITH (
   tsdb.hypertable

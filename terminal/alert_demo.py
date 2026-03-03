@@ -7,8 +7,8 @@ from .hook_mocker import HookMocker
 SEAT_ID = 4
 FPS = 30
 
-alert_at = 18
-total_frames = 30 * FPS
+alert_at = 2
+total_frames = 15 * FPS
 
 server = WebRTCServer(FPS, SEAT_ID)
 server.start()
@@ -46,8 +46,9 @@ try:
             )
             alert = server.alert(
                 timestamp=int(time.time()),
-                summary=f"Alert at frame {frame_count}",
-                level="high",
+                # summary=f"Alert at frame {frame_count}",
+                summary=f"频繁打哈欠，存在疲劳可能性",
+                level="严重",
             )
             # * 模拟 WebHook
             alert = HookMocker(alert, "http://localhost:5000/api/osshook")

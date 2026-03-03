@@ -4,7 +4,7 @@ import threading
 
 import av
 
-ALERT_QUEUE_MAXSIZE = 1000
+ALERT_QUEUE_MAXSIZE = 2000
 
 
 class Alert:
@@ -60,7 +60,7 @@ class Alert:
         def _encode() -> None:
             try:
                 print("Encode thread starting")
-                while not self.stop_event.is_set():
+                while not self.stop_event.is_set() or not self.frame_queue.empty():
                     try:
                         frame = self.frame_queue.get(timeout=0.1)
                         if frame is None:

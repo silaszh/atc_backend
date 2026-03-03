@@ -17,9 +17,9 @@ def page_not_found(e):
 from .routes.model import bp as model_bp
 from .routes.seat import bp as seat_bp
 from .routes.state import bp as state_bp
-from .ws_service import socketio as wss
+from .ws_service import socketio
 
-wss.init_app(app)
+socketio.init_app(app)
 
 app.register_blueprint(model_bp)
 app.register_blueprint(seat_bp)

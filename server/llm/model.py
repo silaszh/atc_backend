@@ -54,6 +54,7 @@ class Model:
         self.model_name = model_name
         self.contexts = {}
         self.multi = False
+        self.tool_choice = "auto"
 
     def new_chat(self, system_prompt=None):
         helper = get_helper()
@@ -79,7 +80,7 @@ class Model:
             model=self.model_name,
             messages=messages,
             tools=using_tools,
-            tool_choice="auto" if using_tools else None,
+            tool_choice=self.tool_choice if using_tools else None,
             stream=stream,
         )
 
@@ -144,7 +145,7 @@ class Model:
                         }
                     )
                 if not tool_loop:
-                    return msg["content"]
+                    return msg["content"], result
                 res = self._chat_api(ctx.messages, tool_list)
 
             msg = format_assistant_message(res.choices[0].message)
