@@ -57,7 +57,6 @@ def create_state():
 
 @bp.route("/api/osshook", methods=["POST"])
 def handle_webhook():
-    # TODO
     data = request.get_json()
     print(data["Key"])
     video_path = data["Key"]
@@ -70,7 +69,6 @@ def handle_webhook():
     video_url = get_video_url(video_path)
     ALERT_STREAM.ingest(alert_id, "alert-video", {"video_url": video_url})
     state = ALERT_STREAM.get_state(alert_id, "alert")
-    print(state)
     msg, tool_res = model.chat(
         state["summary"],
         video_url=video_url,
@@ -80,9 +78,6 @@ def handle_webhook():
     )
     tool_res = json.loads(tool_res)
     print(msg)
-    import pprint
-
-    pprint.pprint(tool_res)
 
     reason = tool_res.get("corrected_analysis", "无")
     suggestion = tool_res.get("recommendation", "无")
@@ -100,13 +95,38 @@ def handle_webhook():
     with ALERT_STREAM.persisting(alert_id):
         helper = get_helper()
         if tool_res["is_system_correct"]:
-            pass
             helper.update_alert(alert_id, reason, suggestion, video_url, tag)
         else:
+            # TODO 再讨论讨论：删除还是保留+标记
             pass
         helper.close()
         alert_map.pop(alert_key, None)
     return "OK", 200
+
+
+@bp.route("/api/alerts", methods=["GET"])
+def get_alerts():
+    page = request.args.get("page", default=1, type=int)
+    helper = get_helper()
+    alerts = helper.get_all_alerts(page=page, page_size=20)
+    helper.close()
+    return jsonify(alerts)
+
+
+@bp.route("/api/alerts/<alert_id>", methods=["GET"])
+def get_alerts_by_alert_id(alert_id):
+    helper = get_helper()
+    alert = helper.get_alert_by_alert_id(alert_id)
+    helper.close()
+    return jsonify(alert)
+
+
+@bp.route("/api/alerts/<alert_id>/settle", methods=["POST"])
+def settle_alert(alert_id):
+    helper = get_helper()
+    helper.settle_alert(alert_id)
+    helper.close()
+    return jsonify({"status": "success"}), 200
 
 
 def _format_sse(event_name, payload, event_id=None):

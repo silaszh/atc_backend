@@ -178,6 +178,26 @@ ORDER BY t.seat_id, t."timestamp" DESC;
         self.connection.commit()
         cursor.close()
 
+    def get_all_alerts(self, page=1, page_size=20):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        cursor.execute(
+            "SELECT alert_id, seat_id, timestamp, summary, level, settled FROM alert ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+            (page_size, (page - 1) * page_size),
+        )
+        alerts = cursor.fetchall()
+        cursor.close()
+        return [dict(alert) for alert in alerts]
+
+    def get_alert_by_alert_id(self, alert_id):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        cursor.execute(
+            "SELECT * FROM alert WHERE alert_id = %s ORDER BY timestamp DESC",
+            (alert_id,),
+        )
+        alerts = cursor.fetchone()
+        cursor.close()
+        return dict(alerts) if alerts else None
+
     def close(self):
         if self.connection:
             self.connection.close()
