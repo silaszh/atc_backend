@@ -31,7 +31,24 @@ class SeatState:
 
 @tool
 def get_all_seat_states():
-    """获取所有席位的状态数据，返回格式为列表，每个元素包含工位ID、员工名称和状态列表"""
+    """获取所有席位的状态数据，返回格式为列表，每个元素包含工位ID、员工名称和状态数据列表
+    其中，状态数据包括以下字段：
+
+    - timestamp: 系统时间（ISO格式字符串）
+    - heart_rate: 心率
+    - emo_v: 效价唤醒模型中的效价值，范围为-1到1，从非常消极到非常积极
+    - emo_a: 效价唤醒模型中的唤醒值，范围为-1到1，从困倦到兴奋
+    - pose_0: 头部姿态角（俯仰角）
+    - pose_1: 头部姿态角（偏航角）
+    - pose_2: 头部姿态角（翻滚角）
+    - ear: 眼睛纵横比
+    - mar: 嘴巴纵横比
+    - label: 通过效价唤醒模型得到的情绪标签
+    - eye_close_freq: 眼睛闭合频率
+    - iris_ratio_x: 虹膜位置水平比（从左至右为0到1）
+    - iris_ratio_y: 虹膜位置垂直比（从下到上为0到1）
+
+    """
     helper = get_helper()
     seats = helper.get_all_seats()
     states = helper.get_all_states()
@@ -48,15 +65,65 @@ def get_all_seat_states():
     return json.dumps([s.to_dict() for s in seat_states.values()])
 
 
-@tool
-def get_seat_states(seat_id: int, time_span: str):
-    """获取指定席位的状态数据"""
-    return "[]"  # TODO
+class SpanType(str, Enum):
+    LATEST = "latest"
+    HOUR = "hour"
+    DAY = "day"
+    MONTH = "month"
+
+
+class GetSeatStatesInput(BaseModel):
+    """get_seat_states工具的输入参数"""
+
+    seat_id: int = Field(description="席位ID")
+    time_span: SpanType = Field(
+        description="""\
+需要获取状态数据的时间范围，可选值：latest（最新状态）、hour（最近1小时）、day（最近24小时）、month（最近30天），分别表示
+
+- 获取最近10条数据
+- 一小时均匀分出10份后各取区间内首条数据
+- 一天均匀分出10份后各取区间内首条数据
+- 一月均匀分出10份后各取区间内首条数据"""
+    )
+
+
+@tool(args_schema=GetSeatStatesInput)
+def get_seat_states(seat_id: int, time_span: SpanType):
+    """获取指定席位指定时间跨度的状态数据列表
+    其中，状态数据包括以下字段：
+
+    - timestamp: 系统时间（ISO格式字符串）
+    - heart_rate: 心率
+    - emo_v: 效价唤醒模型中的效价值，范围为-1到1，从非常消极到非常积极
+    - emo_a: 效价唤醒模型中的唤醒值，范围为-1到1，从困倦到兴奋
+    - pose_0: 头部姿态角（俯仰角）
+    - pose_1: 头部姿态角（偏航角）
+    - pose_2: 头部姿态角（翻滚角）
+    - ear: 眼睛纵横比
+    - mar: 嘴巴纵横比
+    - label: 通过效价唤醒模型得到的情绪标签
+    - eye_close_freq: 眼睛闭合频率
+    - iris_ratio_x: 虹膜位置水平比（从左至右为0到1）
+    - iris_ratio_y: 虹膜位置垂直比（从下到上为0到1）
+    """
+
+    helper = get_helper()
+    match time_span:
+        case SpanType.LATEST:
+            states = helper.get_recent_states_by_seat_id(seat_id)
+        case SpanType.HOUR:
+            states = helper.get_states_by_seat_id_and_time_span(seat_id, "hour")
+        case SpanType.DAY:
+            states = helper.get_states_by_seat_id_and_time_span(seat_id, "day")
+        case SpanType.MONTH:
+            states = helper.get_states_by_seat_id_and_time_span(seat_id, "month")
+    helper.close()
+    return json.dumps(states)
 
 
 @tool
 def get_seat_id_by_name(employee_name: str):
-    """根据员工名称获取对应的席位ID"""
+    """根据员工名称获取对应的席位ID，未找到时返回Not found"""
     helper = get_helper()
     seat = helper.get_seat_by_name(employee_name)
     helper.close()
@@ -73,7 +140,7 @@ def get_seat_id_by_name(employee_name: str):
 
 @tool
 def get_seat_info(seat_id: int):
-    """根据席位ID获取员工名称"""
+    """根据席位ID获取员工名称等信息，含当前在线状态与上一次登录时间，未找到时返回Not found"""
     helper = get_helper()
     seat = helper.get_seat_by_id(seat_id)
     helper.close()
@@ -93,9 +160,11 @@ def get_seat_info(seat_id: int):
 
 @tool
 def get_seat_alert(seat_id: int):
-    """根据席位ID获取员工异常状态警报历史"""
-    # TODO
-    return json.dumps([])
+    """根据席位ID获取员工最近20条异常状态警报历史"""
+    helper = get_helper()
+    alerts = helper.get_alerts_by_seat_id(seat_id)
+    helper.close()
+    return json.dumps(alerts)
 
 
 class ActionType(str, Enum):
@@ -145,7 +214,9 @@ def verify_system_judgment(
             "corrected_analysis": corrected_analysis,
             "recommendation": recommendation,
             # FIXME 性能可能有问题
-            "abnormal_segments": [json.loads(s.model_dump_json()) for s in abnormal_segments],
+            "abnormal_segments": [
+                json.loads(s.model_dump_json()) for s in abnormal_segments
+            ],
         }
     )
 

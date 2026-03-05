@@ -34,7 +34,6 @@ class AlertStreamStore:
         normalized_payload = deepcopy(payload)
         normalized_payload["alert_id"] = alert_id
 
-        merged_to_persist = None
         with self._cond:
             now = time.time()
             self._cleanup_expired_locked(now)
@@ -64,7 +63,6 @@ class AlertStreamStore:
             "alert_id": alert_id,
             "event_name": event_name,
             "seq": seq,
-            "completed": merged_to_persist is not None,
         }
 
     def open_stream_snapshot(self) -> Tuple[List[Dict[str, Any]], int]:

@@ -90,15 +90,19 @@ def handle_webhook():
     ALERT_STREAM.ingest(
         alert_id,
         "alert-llm",
-        {"reason": reason, "suggestion": suggestion, "tag": tag},
+        {
+            "reason": reason,
+            "suggestion": suggestion,
+            "tag": tag,
+            "cancel": not tool_res["is_system_correct"],
+        },
     )
     with ALERT_STREAM.persisting(alert_id):
         helper = get_helper()
         if tool_res["is_system_correct"]:
             helper.update_alert(alert_id, reason, suggestion, video_url, tag)
         else:
-            # TODO 再讨论讨论：删除还是保留+标记
-            pass
+            helper.remove_alert(alert_id)
         helper.close()
         alert_map.pop(alert_key, None)
     return "OK", 200
@@ -108,7 +112,11 @@ def handle_webhook():
 def get_alerts():
     page = request.args.get("page", default=1, type=int)
     helper = get_helper()
-    alerts = helper.get_all_alerts(page=page, page_size=20)
+    if "seat_id" in request.args:
+        seat_id = request.args.get("seat_id", type=int)
+        alerts = helper.get_alerts_by_seat_id(seat_id, page=page, page_size=20)
+    else:
+        alerts = helper.get_all_alerts(page=page, page_size=20)
     helper.close()
     return jsonify(alerts)
 

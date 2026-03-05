@@ -5,7 +5,13 @@ from dotenv import load_dotenv
 
 from ..llm.model import Model
 from ..llm import prompts
-from ..llm.tools import get_all_seat_states, get_seat_id_by_name, get_seat_info
+from ..llm.tools import (
+    get_all_seat_states,
+    get_seat_id_by_name,
+    get_seat_info,
+    get_seat_alert,
+    get_seat_states,
+)
 
 from ..pg_helper import get_helper
 
@@ -14,7 +20,13 @@ load_dotenv()
 bp = Blueprint("model", __name__)
 
 model = Model(os.getenv("CHAT_MODEL"))
-using_tools = [get_seat_id_by_name, get_seat_info]
+using_tools = [
+    get_all_seat_states,
+    get_seat_id_by_name,
+    get_seat_info,
+    get_seat_alert,
+    get_seat_states,
+]
 
 
 def sse_event(data, event="message"):

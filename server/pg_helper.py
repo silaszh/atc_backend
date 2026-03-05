@@ -95,6 +95,41 @@ ORDER BY t.seat_id, t."timestamp" DESC;
             state["timestamp"] = state["timestamp"].isoformat()
         return states
 
+    def get_recent_states_by_seat_id(self, seat_id):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        query = 'SELECT * FROM state s WHERE s.seat_id = %s ORDER BY s."timestamp" DESC LIMIT 10'
+        cursor.execute(query, (seat_id,))
+        states = cursor.fetchall()
+        cursor.close()
+        states = [dict(row) for row in states]
+        for state in states:
+            state["timestamp"] = state["timestamp"].isoformat()
+        return states
+
+    def get_states_by_seat_id_and_time_span(self, seat_id, time_span):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        time_span = f"1 {time_span}"
+        query = """\
+WITH bucket_groups AS (
+    SELECT 
+        time_bucket( (NOW() - (NOW() - INTERVAL %s)) / 10, timestamp  ) AS bucket,
+        *
+    FROM state s 
+    WHERE s."timestamp"  >= NOW() - INTERVAL %s AND s."timestamp" < NOW() AND s.seat_id = %s
+)
+SELECT DISTINCT ON (bucket) *
+FROM bucket_groups
+ORDER BY bucket, "timestamp";
+"""
+        cursor.execute(query, (time_span, time_span, seat_id))
+        states = cursor.fetchall()
+        cursor.close()
+        states = [dict(row) for row in states]
+        for state in states:
+            state.pop("bucket", None)
+            state["timestamp"] = state["timestamp"].isoformat()
+        return states
+
     def create_chat(self):
         cursor = self.connection.cursor()
         cursor.execute("INSERT INTO chat (time) VALUES (NOW()) RETURNING chat_id")
@@ -178,10 +213,19 @@ ORDER BY t.seat_id, t."timestamp" DESC;
         self.connection.commit()
         cursor.close()
 
+    def remove_alert(self, alert_id):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "DELETE FROM alert WHERE alert_id = %s",
+            (alert_id,),
+        )
+        self.connection.commit()
+        cursor.close()
+
     def get_all_alerts(self, page=1, page_size=20):
         cursor = self.connection.cursor(cursor_factory=DictCursor)
         cursor.execute(
-            "SELECT alert_id, seat_id, timestamp, summary, level, settled FROM alert ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+            "SELECT alert_id, seat_id, timestamp, summary, level, settled FROM alert WHERE settled IS NOT NULL ORDER BY timestamp DESC LIMIT %s OFFSET %s",
             (page_size, (page - 1) * page_size),
         )
         alerts = cursor.fetchall()
@@ -197,6 +241,16 @@ ORDER BY t.seat_id, t."timestamp" DESC;
         alerts = cursor.fetchone()
         cursor.close()
         return dict(alerts) if alerts else None
+
+    def get_alerts_by_seat_id(self, seat_id, page=1, page_size=20):
+        cursor = self.connection.cursor(cursor_factory=DictCursor)
+        cursor.execute(
+            "SELECT alert_id, seat_id, timestamp, summary, level, settled FROM alert WHERE settled IS NOT NULL AND seat_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+            (seat_id, page_size, (page - 1) * page_size),
+        )
+        alerts = cursor.fetchall()
+        cursor.close()
+        return [dict(alert) for alert in alerts]
 
     def close(self):
         if self.connection:
