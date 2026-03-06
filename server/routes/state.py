@@ -111,12 +111,13 @@ def handle_webhook():
 @bp.route("/api/alerts", methods=["GET"])
 def get_alerts():
     page = request.args.get("page", default=1, type=int)
+    page_size = request.args.get("page_size", default=20, type=int)
     helper = get_helper()
     if "seat_id" in request.args:
         seat_id = request.args.get("seat_id", type=int)
-        alerts = helper.get_alerts_by_seat_id(seat_id, page=page, page_size=20)
+        alerts = helper.get_alerts_by_seat_id(seat_id, page=page, page_size=page_size)
     else:
-        alerts = helper.get_all_alerts(page=page, page_size=20)
+        alerts = helper.get_all_alerts(page=page, page_size=page_size)
     helper.close()
     return jsonify(alerts)
 

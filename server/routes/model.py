@@ -63,8 +63,13 @@ def create_chat():
     if request.is_json:
         data = request.get_json()
         if isinstance(data["prompt"], str):
+            prompt = build_user_prompt(
+                user_query=data["prompt"],
+                seat_ids=data.get("seat_ids"),
+                tasks=data.get("tasks"),
+            )
             return Response(
-                sse_wrapper(chat_id, data["prompt"], new_chat=True),
+                sse_wrapper(chat_id, prompt, new_chat=True),
                 mimetype="text/event-stream",
             )
     return jsonify({"chat_id": chat_id})
@@ -83,8 +88,24 @@ def send_message(chat_id):
     if request.is_json:
         data = request.get_json()
         if isinstance(data["prompt"], str):
+            prompt = build_user_prompt(
+                user_query=data["prompt"],
+                seat_ids=data.get("seat_ids"),
+                tasks=data.get("tasks"),
+            )
             return Response(
-                sse_wrapper(int(chat_id), data["prompt"]),
+                sse_wrapper(int(chat_id), prompt),
                 mimetype="text/event-stream",
             )
     return jsonify({"error": "Invalid input"}), 400
+
+
+def build_user_prompt(user_query=None, seat_ids=None, tasks=None):
+    parts = []
+    if seat_ids and isinstance(seat_ids, list) and len(seat_ids) > 0:
+        parts.append(f"【感兴趣员工】{', '.join(seat_ids)}")
+    if tasks and isinstance(tasks, list) and len(tasks) > 0:
+        parts.append(f"【期望任务】{', '.join(tasks)}")
+    if user_query:
+        parts.append(f"【用户原话】{user_query}")
+    return "\n".join(parts)
