@@ -65,7 +65,7 @@ def create_chat():
         if isinstance(data["prompt"], str):
             prompt = build_user_prompt(
                 user_query=data["prompt"],
-                seat_ids=data.get("seat_ids"),
+                seat_ids=data.get("objects"),
                 tasks=data.get("tasks"),
             )
             return Response(
@@ -90,7 +90,7 @@ def send_message(chat_id):
         if isinstance(data["prompt"], str):
             prompt = build_user_prompt(
                 user_query=data["prompt"],
-                seat_ids=data.get("seat_ids"),
+                seat_ids=data.get("objects"),
                 tasks=data.get("tasks"),
             )
             return Response(
