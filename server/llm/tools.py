@@ -164,6 +164,9 @@ def get_seat_alert(seat_id: int):
     helper = get_helper()
     alerts = helper.get_alerts_by_seat_id(seat_id)
     helper.close()
+    # ? datetime对象JSON序列化时直接转字符串
+    for alert in alerts:
+        alert["timestamp"] = str(alert["timestamp"])
     return json.dumps(alerts)
 
 

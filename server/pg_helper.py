@@ -232,6 +232,13 @@ ORDER BY bucket, "timestamp";
         cursor.close()
         return [dict(alert) for alert in alerts]
 
+    def get_total_alert_count(self):
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT COUNT(*) FROM alert WHERE settled IS NOT NULL")
+        total = cursor.fetchone()[0]
+        cursor.close()
+        return total
+
     def get_alert_by_alert_id(self, alert_id):
         cursor = self.connection.cursor(cursor_factory=DictCursor)
         cursor.execute(

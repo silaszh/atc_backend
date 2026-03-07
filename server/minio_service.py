@@ -17,5 +17,5 @@ minio_client = Minio(
 def get_video_url(video_path):
     filename = os.path.basename(video_path)
     return minio_client.presigned_get_object(
-        bucket_name="atc", object_name=filename, expires=timedelta(days=30)
+        bucket_name="atc", object_name=filename, expires=timedelta(days=7)
     )

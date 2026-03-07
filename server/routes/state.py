@@ -122,6 +122,19 @@ def get_alerts():
     return jsonify(alerts)
 
 
+@bp.route("/api/alerts/page-info", methods=["GET"])
+def get_alert_page_info():
+    page_size = request.args.get("page_size", default=20, type=int)
+    helper = get_helper()
+    total = helper.get_total_alert_count()
+    helper.close()
+    return {
+        "total": total,
+        "count": total // page_size + (1 if total % page_size > 0 else 0),
+        "size": page_size,
+    }
+
+
 @bp.route("/api/alerts/<alert_id>", methods=["GET"])
 def get_alerts_by_alert_id(alert_id):
     helper = get_helper()

@@ -23,7 +23,7 @@ if not client.bucket_exists("atc"):
 rule = Rule(
     status=ENABLED,
     rule_id="cleanup_old_videos",
-    expiration=Expiration(days=1),
+    expiration=Expiration(days=7),
 )
 
 lifecycle_config = LifecycleConfig([rule])
