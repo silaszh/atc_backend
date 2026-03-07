@@ -68,3 +68,9 @@ CREATE TABLE IF NOT EXISTS alert(
 ) WITH (
   tsdb.hypertable
 );
+
+SELECT remove_compression_policy('state');
+SELECT add_compression_policy('state', INTERVAL '30 days');
+
+SELECT add_retention_policy('state', INTERVAL '6 months');
+SELECT add_retention_policy('alert', INTERVAL '2 years');

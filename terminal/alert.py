@@ -17,9 +17,14 @@ class Alert:
         self.upload_thread = None
         self.stop_event = threading.Event()
         self.dropped_frames = 0
+        self.accepting_frames = False
+        self.ended = False
 
     def start(self, width=1920, height=1080, fps=30):
         print(f"Starting alert with {width}x{height}")
+        self.accepting_frames = True
+        self.ended = False
+        self.stop_event.clear()
         read_fd, write_fd = os.pipe()
         self.read_pipe = os.fdopen(read_fd, "rb", buffering=0)
         self.write_pipe = os.fdopen(write_fd, "wb", buffering=0)
@@ -63,8 +68,6 @@ class Alert:
                 while not self.stop_event.is_set() or not self.frame_queue.empty():
                     try:
                         frame = self.frame_queue.get(timeout=0.1)
-                        if frame is None:
-                            break
                         av_frame = av.VideoFrame.from_ndarray(frame, format="bgr24")
                         for packet in self.stream.encode(av_frame):
                             self.container.mux(packet)
@@ -81,6 +84,8 @@ class Alert:
         self.encode_thread.start()
 
     def provide_frame(self, frame):
+        if not self.accepting_frames or self.ended:
+            return
         try:
             self.frame_queue.put(frame, block=True, timeout=0.05)
         except queue.Full:
@@ -92,17 +97,20 @@ class Alert:
                 )
 
     def end(self):
+        if self.ended:
+            return
+        self.ended = True
+        self.accepting_frames = False
         print(
             f"Stopping alert, queued frames: {self.frame_queue.qsize()}, dropped frames: {self.dropped_frames}"
         )
-        self.frame_queue.put(None)
         self.stop_event.set()
 
         # 等待编码线程完成
         if self.encode_thread:
-            self.encode_thread.join(timeout=30)
+            self.encode_thread.join()
             if self.encode_thread.is_alive():
-                print("Warning: Encode thread still running after timeout")
+                print("Warning: Encode thread still running")
             else:
                 print(f"Encode thread completed with {self.frame_count} frames")
 

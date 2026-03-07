@@ -177,11 +177,11 @@ class ActionType(str, Enum):
 
 
 class AbnormalSegment(BaseModel):
-    start_second: float = Field(ge=0, le=15, description="异常开始时间（秒，0~15）")
+    start_second: float = Field(ge=0, le=60, description="异常开始时间（秒，0~60）")
     end_second: Optional[float] = Field(
         None,
         ge=0,
-        le=15,
+        le=60,
         description="异常结束时间（秒，若为瞬时事件可不填或等于 start_second）",
     )
     action_type: ActionType = Field(description="异常动作类型")
