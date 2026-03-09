@@ -1,5 +1,6 @@
 import time
 import os
+import json
 from flask import Blueprint, Response, request, jsonify
 from dotenv import load_dotenv
 
@@ -43,7 +44,8 @@ def sse_wrapper(chat_id, message, new_chat=False):
             yield sse_event(time.time() - start, "sep")
             start = time.time()
         else:
-            yield sse_event(text, text_type)
+            data = {"d": text}
+            yield sse_event(json.dumps(data), text_type)
     if new_chat:
         yield sse_event(model.summarize_chat(chat_id), "summary")
     yield sse_event(time.time() - start, "close")
